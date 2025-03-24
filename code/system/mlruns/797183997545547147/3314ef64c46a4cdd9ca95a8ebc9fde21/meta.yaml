@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/a0905/OneDrive/Desktop/FLT%28CUDA_Version%29/FL_Test_Env/code/system/mlruns/797183997545547147/3314ef64c46a4cdd9ca95a8ebc9fde21/artifacts
+end_time: 1731841885499
+entry_point_name: ''
+experiment_id: '797183997545547147'
+lifecycle_stage: active
+run_id: 3314ef64c46a4cdd9ca95a8ebc9fde21
+run_name: AdaptiveFedAvg_with_UCB
+run_uuid: 3314ef64c46a4cdd9ca95a8ebc9fde21
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1731841885471
+status: 4
+tags: []
+user_id: a0905
