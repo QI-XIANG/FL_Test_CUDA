@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/a0905/OneDrive/Desktop/FLT%28CUDA_Version%29/FL_Test_Env/code/system/mlruns/741368953842625262/22e8083a0ee5405b8576b43e492eb2d7/artifacts
+end_time: 1731246562459
+entry_point_name: ''
+experiment_id: '741368953842625262'
+lifecycle_stage: active
+run_id: 22e8083a0ee5405b8576b43e492eb2d7
+run_name: noniid_wbn_12.0_BULYAN
+run_uuid: 22e8083a0ee5405b8576b43e492eb2d7
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1731246562429
+status: 4
+tags: []
+user_id: a0905
