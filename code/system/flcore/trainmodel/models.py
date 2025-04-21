@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch import nn, Tensor
+from torchvision.models import resnet18, ResNet18_Weights
 
 batch_size = 10
 
@@ -238,6 +239,202 @@ class FedAvgCNN(nn.Module):
         out = self.fc1(out)
         out = self.fc(out)
         return out
+
+    def feature_extractor(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = torch.flatten(out, 1)
+        out = self.fc1(out)
+        return out
+
+class FedAvgCifar10(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FedAvgCifar10, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=5, padding=2, stride=1, bias=True),  # Changed in_features to 3, added padding=2
+            nn.GroupNorm(8, 32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=5, padding=2, stride=1, bias=True),  # Added padding=2
+            nn.GroupNorm(8, 64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        # For CIFAR-10 (32x32x3), output after conv2 is 64x8x8 (see below)
+        self.fc1 = nn.Sequential(
+            nn.Linear(64 * 8 * 8, 512),  # Corrected dim to 4096
+            nn.ReLU(inplace=True)
+        )
+        self.fc = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = torch.flatten(out, 1)
+        out = self.fc1(out)
+        out = self.fc(out)
+        return out
+
+class FedAvgCifar100(nn.Module):
+    def __init__(self, num_classes=100):  # Default to 100 for CIFAR-100
+        super(FedAvgCifar100, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=5, padding=2, stride=1, bias=True),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=5, padding=2, stride=1, bias=True),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, stride=1, bias=True),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        # For CIFAR-100 (32x32x3), output after conv3 is 128x4x4
+        self.fc1 = nn.Sequential(
+            nn.Linear(128 * 4 * 4, 512),  # Correct dim: 128 * 4 * 4 = 2048
+            nn.ReLU(inplace=True)
+        )
+        self.fc = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = torch.flatten(out, 1)
+        out = self.fc1(out)
+        out = self.fc(out)
+        return out
+
+#---------------------------------------------------------------------------------------------------
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.gn1 = nn.GroupNorm(8, out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.gn2 = nn.GroupNorm(8, out_channels)
+        
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
+        else:
+            self.shortcut = nn.Identity()
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.gn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.gn2(out)
+        shortcut = self.shortcut(x)
+        out += shortcut
+        out = self.relu(out)
+        return out
+
+class FedAvgCifar100ResNet(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedAvgCifar100ResNet, self).__init__()
+        self.initial_conv = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(inplace=True)
+        )
+        self.stage1 = nn.Sequential(
+            ResidualBlock(32, 32, stride=1),
+            ResidualBlock(32, 32, stride=1)
+        )
+        self.stage2 = nn.Sequential(
+            ResidualBlock(32, 64, stride=2),
+            ResidualBlock(64, 64, stride=1)
+        )
+        self.stage3 = nn.Sequential(
+            ResidualBlock(64, 128, stride=2),
+            ResidualBlock(128, 128, stride=1)
+        )
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.dropout = nn.Dropout(p=0.5)
+        self.fc = nn.Linear(128, num_classes)
+
+    def forward(self, x):
+        out = self.initial_conv(x)
+        out = self.stage1(out)
+        out = self.stage2(out)
+        out = self.stage3(out)
+        out = self.global_pool(out)
+        out = torch.flatten(out, 1)
+        out = self.dropout(out)
+        out = self.fc(out)
+        return out
+
+#---------------------------------------------------------------------------------------------------
+
+class FedAvgCifar100Enhanced(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedAvgCifar100Enhanced, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2),
+
+            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)
+        )
+        self.classifier = nn.Sequential(
+            nn.Linear(256 * 4 * 4, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(512, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+#---------------------------------------------------------------------------------------------------
+
+class FedProtoCifar100(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100, self).__init__()
+        # Utilize a pretrained ResNet-18 backbone for feature extraction
+        resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        self.feature_extractor = nn.Sequential(*list(resnet.children())[:-1])  # Remove the final classification layer
+        self.fc = nn.Linear(resnet.fc.in_features, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        x = x.view(x.size(0), -1)  # Flatten the tensor
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------
 
 class FedAvgCNN2(nn.Module): #for CelebA Dataset
     def __init__(self, in_features, num_classes):

@@ -345,8 +345,8 @@ class Server(object):
                     temp += weight * model.state_dict()[key]
                 self.global_model.state_dict()[key].data.copy_(temp)
 
-    def aggregate_parameters_bn(self, clients_weight):
-        """聚合參數（含批次正規化層）"""
+    '''def aggregate_parameters_bn(self, clients_weight):
+        #聚合參數（含批次正規化層)
         bn_key = ['conv1.1.weight', 'conv1.1.bias', 'conv1.1.running_mean', 'conv1.1.running_var', 'conv1.1.num_batches_tracked',
                   'conv2.1.weight', 'conv2.1.bias', 'conv2.1.running_mean', 'conv2.1.running_var', 'conv2.1.num_batches_tracked']
         for key in self.global_model.state_dict().keys():
@@ -355,6 +355,33 @@ class Server(object):
                 for weight, model in zip(clients_weight, self.uploaded_models):
                     if key in model.state_dict():
                         temp += weight * model.state_dict()[key]
+                self.global_model.state_dict()[key].data.copy_(temp)'''
+    
+    def aggregate_parameters_bn(self, clients_weight):
+        """Aggregate parameters (excluding batch normalization layers)"""
+        # Dynamically identify batch normalization-related keys
+        bn_keys = []
+        for name, module in self.global_model.named_modules():
+            if isinstance(module, torch.nn.BatchNorm2d):
+                # BN parameters: weight, bias, running_mean, running_var, num_batches_tracked
+                bn_keys.extend([
+                    f"{name}.weight",
+                    f"{name}.bias",
+                    f"{name}.running_mean",
+                    f"{name}.running_var",
+                    f"{name}.num_batches_tracked"
+                ])
+
+        # Aggregate parameters
+        for key in self.global_model.state_dict().keys():
+            if key not in bn_keys:
+                # Initialize temporary tensor for aggregation
+                temp = torch.zeros_like(self.global_model.state_dict()[key], dtype=torch.float32)
+                # Aggregate weighted parameters from client models
+                for weight, model in zip(clients_weight, self.uploaded_models):
+                    if key in model.state_dict():
+                        temp += weight * model.state_dict()[key]
+                # Update global model parameters
                 self.global_model.state_dict()[key].data.copy_(temp)
 
     def aggregate_parameters(self, clients_weight):
@@ -431,8 +458,8 @@ class Server(object):
         # 繪製並儲存 AUC 圖表
         plt.figure()
         plt.plot(auc_df, label='AUC', color='blue')
-        plt.title('AUC 隨時間變化')
-        plt.xlabel('輪次')
+        plt.title('AUC Over Time')
+        plt.xlabel('Epochs')
         plt.ylabel('AUC')
         plt.legend()
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -441,10 +468,10 @@ class Server(object):
 
         # 繪製並儲存準確率圖表
         plt.figure()
-        plt.plot(acc_df, label='準確率', color='green')
-        plt.title('準確率隨時間變化')
-        plt.xlabel('輪次')
-        plt.ylabel('準確率')
+        plt.plot(acc_df, label='Accuracy', color='green')
+        plt.title('Accuracy Over Time')
+        plt.xlabel('Epochs')
+        plt.ylabel('Accuracy')
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.legend()
         plt.savefig(os.path.join(acc_dir, f"{name}_accuracy.png"))
@@ -452,10 +479,10 @@ class Server(object):
 
         # 繪製並儲存損失圖表
         plt.figure()
-        plt.plot(loss_df, label='損失', color='red')
-        plt.title('損失隨時間變化')
-        plt.xlabel('輪次')
-        plt.ylabel('損失')
+        plt.plot(loss_df, label='Loss', color='red')
+        plt.title('Loss Over Time')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.legend()
         plt.savefig(os.path.join(loss_dir, f"{name}_loss.png"))

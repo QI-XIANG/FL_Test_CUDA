@@ -6,7 +6,9 @@ import os
 from torch.utils.data import DataLoader
 from sklearn import metrics
 from utils.data_utils import read_client_data
-
+from sklearn.preprocessing import label_binarize
+from torchvision import transforms
+import random
 
 # 聯邦學習客戶端類，支援 CelebA 多標籤分類
 class Client(object):
@@ -17,7 +19,7 @@ class Client(object):
     def __init__(self, args, id, train_samples, test_samples, **kwargs):
         """
         初始化客戶端。
-        
+
         參數：
             args: 包含模型、資料集、學習率等參數的物件
             id (int): 客戶端編號
@@ -25,8 +27,8 @@ class Client(object):
             test_samples (int): 測試樣本數
             **kwargs: 額外參數（如毒化標記）
         """
-        self.model = copy.deepcopy(args.model) 
-        
+        self.model = copy.deepcopy(args.model)
+
         self.algorithm = args.algorithm
         self.dataset = args.dataset
         self.device = args.device
@@ -40,6 +42,7 @@ class Client(object):
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.is_multilabel = (self.dataset.lower() == 'celeba')  # 添加多標籤標誌
+        self.data_augmentation = args.data_augmentation if hasattr(args, 'data_augmentation') else True
 
         # 檢查是否有 BatchNorm 層（這裡使用 GroupNorm，無需調整）
         self.has_BatchNorm = False
@@ -64,19 +67,54 @@ class Client(object):
 
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         self.learning_rate_scheduler = torch.optim.lr_scheduler.ExponentialLR(
-            optimizer=self.optimizer, 
+            optimizer=self.optimizer,
             gamma=args.learning_rate_decay_gamma
         )
         self.learning_rate_decay = args.learning_rate_decay
         self.poisoned = kwargs['poisoned']
 
+    def _apply_data_augmentation_cifar100(self, images):
+        """
+        對 CIFAR-100 的輸入圖像應用本地資料增強。
+
+        參數：
+            images (torch.Tensor): 一批圖像資料。
+
+        返回：
+            torch.Tensor: 增強後的圖像資料。
+        """
+        if self.data_augmentation == 'flip':
+            if random.random() > 0.5:
+                images = torch.flip(images, dims=[3])  # 水平翻轉
+        elif self.data_augmentation == 'rotate':
+            angle = random.uniform(-15, 15)
+            images = transforms.functional.rotate(images, angle)
+        elif self.data_augmentation == 'crop':
+            i, j, h, w = transforms.RandomCrop.get_params(
+                images, output_size=(28, 28)  # CIFAR-100 是 32x32, 裁剪到 28x28
+            )
+            images = transforms.functional.crop(images, i, j, h, w)
+            images = torch.nn.functional.interpolate(images.unsqueeze(0), size=(32, 32), mode='bilinear', align_corners=False).squeeze(0)
+        elif self.data_augmentation == 'random_affine':
+            degrees = 15
+            translate = (0.1, 0.1)
+            scale = (0.9, 1.1)
+            shear = (-10, 10)
+            images = transforms.functional.affine(images, angle=random.uniform(-degrees, degrees),
+                                                   translate=(int(random.uniform(-translate[0] * 32, translate[0] * 32)),
+                                                                int(random.uniform(-translate[1] * 32, translate[1] * 32))),
+                                                   scale=random.uniform(scale[0], scale[1]),
+                                                   shear=(random.uniform(-shear[0], shear[0]), random.uniform(-shear[1], shear[1])))
+        # 可以添加更多 CIFAR-100 特定的增強策略
+        return images
+
     def load_train_data(self, batch_size=None):
         """
-        載入客戶端的訓練資料。
-        
+        載入客戶端的訓練資料，並可選擇性地應用資料增強（僅針對 CIFAR-100）。
+
         參數：
             batch_size (int, optional): 批量大小，預設使用 self.batch_size
-        
+
         返回：
             DataLoader: 訓練資料載入器
         """
@@ -84,6 +122,7 @@ class Client(object):
             batch_size = self.batch_size
         train_data = read_client_data(self.dataset, self.id, is_train=True)
         train_data_poison = []
+        augmented_train_data = []
 
         if self.is_multilabel:
             # CelebA 的毒化邏輯：隨機翻轉部分屬性標籤
@@ -112,15 +151,26 @@ class Client(object):
                     train_data_poison.append(tuple(data))
                 train_data = train_data_poison
 
-        return DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
+        # 僅對 CIFAR-100 應用本地資料增強
+        if self.data_augmentation is not None and self.dataset.lower() == 'cifar100_100':
+            #print("Start data augmentation.")
+            for images, labels in train_data:
+                augmented_images = self._apply_data_augmentation_cifar100(images)
+                augmented_train_data.append((augmented_images, labels))
+            train_loader = DataLoader(augmented_train_data, batch_size, drop_last=True, shuffle=True) # 增強後需要 shuffle
+            #print("Finish data augmentation.")
+        else:
+            train_loader = DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
+
+        return train_loader
 
     def load_test_data(self, batch_size=None):
         """
         載入客戶端的測試資料。
-        
+
         參數：
             batch_size (int, optional): 批量大小，預設使用 self.batch_size
-        
+
         返回：
             DataLoader: 測試資料載入器
         """
@@ -128,15 +178,22 @@ class Client(object):
             batch_size = self.batch_size
         test_data = read_client_data(self.dataset, self.id, is_train=False)
         return DataLoader(test_data, batch_size, drop_last=False, shuffle=False)
-    
+
     def set_parameters_bn(self, model):
-        """
-        設定模型參數（保留 GroupNorm 或 BatchNorm 層）。
-        """
-        bn_key = ['conv1.1.weight', 'conv1.1.bias', 'conv1.1.running_mean', 'conv1.1.running_var', 'conv1.1.num_batches_tracked',
-                  'conv2.1.weight', 'conv2.1.bias', 'conv2.1.running_mean', 'conv2.1.running_var', 'conv2.1.num_batches_tracked']
+        bn_keys = []
+        for name, module in self.model.named_modules():
+            if isinstance(module, torch.nn.BatchNorm2d):
+                # BN parameters: weight, bias, running_mean, running_var, num_batches_tracked
+                bn_keys.extend([
+                    f"{name}.weight",
+                    f"{name}.bias",
+                    f"{name}.running_mean",
+                    f"{name}.running_var",
+                    f"{name}.num_batches_tracked"
+                ])
+
         for key in self.model.state_dict().keys():
-            if key not in bn_key:
+            if key not in bn_keys:
                 if key in model.state_dict():
                     self.model.state_dict()[key].data.copy_(model.state_dict()[key])
 
@@ -164,9 +221,9 @@ class Client(object):
     def test_metrics(self):
         """
         測試模型性能，適配多標籤和單標籤資料集。
-        
+
         返回：
-            tuple: 
+            tuple:
                 - 多標籤 (CelebA): (test_acc, test_num, auc, label_acc)
                 - 單標籤: (test_acc, test_num, auc)
         """
@@ -192,15 +249,15 @@ class Client(object):
                     y = y.to(self.device).float()  # 轉為浮點數，因為標籤是 0/1
                     output = self.model(x)
                     preds = (torch.sigmoid(output) > 0.5).float()  # 預測值（閾值 0.5）
-                    
+
                     # 計算總正確屬性數和每個屬性的正確數
                     test_acc += torch.sum(preds == y).item()
                     correct_per_label += torch.sum(preds == y, dim=0)
                     test_num += y.shape[0]
-                    
+
                     # 檢查每個屬性是否有正負樣本
                     valid_attributes += (torch.sum(y, dim=0) > 0).float() * (torch.sum(1 - y, dim=0) > 0).float()
-                    
+
                     y_prob.append(output.detach().cpu().numpy())  # logits 用於 AUC
                     y_true.append(y.detach().cpu().numpy())
 
@@ -223,37 +280,36 @@ class Client(object):
             # 單標籤評估
             with torch.no_grad():
                 for x, y in testloaderfull:
-                    if isinstance(x, list):
+                    if type(x) == type([]):
                         x[0] = x[0].to(self.device)
                     else:
                         x = x.to(self.device)
                     y = y.to(self.device)
                     output = self.model(x)
-                    test_acc += torch.sum(torch.argmax(output, dim=1) == y).item()
+
+                    test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
                     test_num += y.shape[0]
+
                     y_prob.append(output.detach().cpu().numpy())
                     nc = self.num_classes
                     if self.num_classes == 2:
                         nc += 1
-                    lb = np.eye(nc)[y.detach().cpu().numpy()]
+                    lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
                     if self.num_classes == 2:
                         lb = lb[:, :2]
                     y_true.append(lb)
 
-            if test_num == 0:
-                return 0, 0, 0.0
-
             y_prob = np.concatenate(y_prob, axis=0)
             y_true = np.concatenate(y_true, axis=0)
-            auc = metrics.roc_auc_score(y_true, y_prob, average='micro') if y_true.size > 0 else 0.0
-            test_acc = test_acc / test_num  # 單標籤準確率
+
+            auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
 
             return test_acc, test_num, auc
 
     def train_metrics(self):
         """
         計算訓練損失。
-        
+
         返回：
             tuple: (總損失, 訓練樣本數)
         """
