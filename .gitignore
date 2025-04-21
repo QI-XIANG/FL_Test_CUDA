@@ -16,3 +16,14 @@ FL_Test_Env_CUDA/.git/objects/90/c5365492dea3b3c855b2375f1de8588ac1bda4
 FL_Test_Env_CUDA/.git/objects/e0/2c80e2d56dd054787a012c96e545d65d55f92b
 FL_Test_Env_CUDA/.git/objects/pack/pack-c77d35b55fe03d8c1e6d1e2c825d6ffebd717734.pack
 dataset/
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/GTSRB20/rawdata/GTSRB_Final_Training_Images.zip
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha03/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha03/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha1/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha1/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha05/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_100_alpha05/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_100/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_100/rawdata/cifar-100-python/train

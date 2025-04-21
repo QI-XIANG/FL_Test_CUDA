@@ -33,6 +33,7 @@ from flcore.trainmodel.models import *
 
 from flcore.trainmodel.bilstm import *
 from flcore.trainmodel.resnet import *
+from flcore.trainmodel.resnetCifar100 import *
 from flcore.trainmodel.alexnet import *
 from flcore.trainmodel.mobilenet_v2 import *
 
@@ -74,12 +75,12 @@ def run(args):
         elif model_str == "cnn": # non-convex
             if "mnist20" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
-            elif "fmnist20" in args.dataset:
+            elif "fmnist600" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
             elif "Cifar10_20" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
-            elif "Cifar100_20" in args.dataset:
-                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Cifar100_100" in args.dataset:
+                args.model = FedProtoCifar100().to(args.device)
             elif "omniglot" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=33856).to(args.device)
                 # args.model = CifarNet(num_classes=args.num_classes).to(args.device)
