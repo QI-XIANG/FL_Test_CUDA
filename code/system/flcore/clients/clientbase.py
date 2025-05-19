@@ -8,6 +8,7 @@ from sklearn import metrics
 from utils.data_utils import read_client_data
 from sklearn.preprocessing import label_binarize
 from torchvision import transforms
+from sklearn.metrics import f1_score, precision_recall_curve, auc as sklearn_auc
 import random
 
 # 聯邦學習客戶端類，支援 CelebA 多標籤分類
@@ -220,12 +221,12 @@ class Client(object):
 
     def test_metrics(self):
         """
-        測試模型性能，適配多標籤和單標籤資料集。
+        測試模型性能，適配多標籤和單標籤資料集，計算準確率、AUC、F1 分數和 AUC-PR。
 
         返回：
             tuple:
-                - 多標籤 (CelebA): (test_acc, test_num, auc, label_acc)
-                - 單標籤: (test_acc, test_num, auc)
+                - 多標籤 (CelebA): (test_acc, test_num, auc, label_acc, f1, auc_pr)
+                - 單標籤: (test_acc, test_num, auc, f1, auc_pr)
         """
         testloaderfull = self.load_test_data()
         self.model.eval()
@@ -234,6 +235,7 @@ class Client(object):
         test_num = 0
         y_prob = []
         y_true = []
+        y_pred = []
 
         if self.is_multilabel:
             # 多標籤（CelebA）評估
@@ -258,11 +260,12 @@ class Client(object):
                     # 檢查每個屬性是否有正負樣本
                     valid_attributes += (torch.sum(y, dim=0) > 0).float() * (torch.sum(1 - y, dim=0) > 0).float()
 
-                    y_prob.append(output.detach().cpu().numpy())  # logits 用於 AUC
+                    y_prob.append(output.detach().cpu().numpy())  # logits 用於 AUC 和 AUC-PR
                     y_true.append(y.detach().cpu().numpy())
+                    y_pred.append(preds.detach().cpu().numpy())  # 預測標籤用於 F1 分數
 
             if test_num == 0:
-                return 0, 0, 0.0, np.zeros(self.num_classes)
+                return 0, 0, 0.0, np.zeros(self.num_classes), 0.0, 0.0
 
             # 計算有效屬性數並調整準確率
             valid_mask = (valid_attributes > 0).float()
@@ -272,9 +275,19 @@ class Client(object):
 
             y_prob = np.concatenate(y_prob, axis=0)
             y_true = np.concatenate(y_true, axis=0)
+            y_pred = np.concatenate(y_pred, axis=0)
+
+            # 計算 AUC（宏平均）
             auc = metrics.roc_auc_score(y_true, y_prob, average='macro') if y_true.size > 0 else 0.0
 
-            return test_acc, test_num, auc, label_acc
+            # 計算 F1 分數（微平均）
+            f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
+
+            # 計算 AUC-PR（微平均）
+            precision, recall, _ = precision_recall_curve(y_true.ravel(), y_prob.ravel())
+            auc_pr = sklearn_auc(recall, precision) if precision.size > 0 else 0.0
+
+            return test_acc, test_num, auc, label_acc, f1, auc_pr
 
         else:
             # 單標籤評估
@@ -286,11 +299,13 @@ class Client(object):
                         x = x.to(self.device)
                     y = y.to(self.device)
                     output = self.model(x)
+                    preds = torch.argmax(output, dim=1)  # 預測類別
 
-                    test_acc += (torch.sum(torch.argmax(output, dim=1) == y)).item()
+                    test_acc += (torch.sum(preds == y)).item()
                     test_num += y.shape[0]
 
                     y_prob.append(output.detach().cpu().numpy())
+                    y_pred.append(preds.detach().cpu().numpy())
                     nc = self.num_classes
                     if self.num_classes == 2:
                         nc += 1
@@ -299,12 +314,27 @@ class Client(object):
                         lb = lb[:, :2]
                     y_true.append(lb)
 
+            if test_num == 0:
+                return 0, 0, 0.0, 0.0, 0.0
+
             y_prob = np.concatenate(y_prob, axis=0)
             y_true = np.concatenate(y_true, axis=0)
+            y_pred = np.concatenate(y_pred, axis=0)
 
-            auc = metrics.roc_auc_score(y_true, y_prob, average='micro')
+            # 計算 AUC（微平均）
+            auc = metrics.roc_auc_score(y_true, y_prob, average='micro') if y_true.size > 0 else 0.0
 
-            return test_acc, test_num, auc
+            # 計算 F1 分數（加權平均）
+            f1 = f1_score(y_true.argmax(axis=1), y_pred, average='weighted', zero_division=0)
+
+            # 計算 AUC-PR（各類別平均）
+            auc_pr_score = 0.0
+            for i in range(self.num_classes):
+                precision, recall, _ = precision_recall_curve(y_true[:, i], y_prob[:, i])
+                auc_pr_score += sklearn_auc(recall, precision) if precision.size > 0 else 0.0
+            auc_pr_score /= self.num_classes if self.num_classes > 0 else 1
+
+            return test_acc, test_num, auc, f1, auc_pr_score
 
     def train_metrics(self):
         """

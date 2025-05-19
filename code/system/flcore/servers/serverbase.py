@@ -16,6 +16,7 @@ from sklearn import metrics
 import math
 import heapq
 from sklearn.cluster import KMeans
+from sklearn.metrics import f1_score, precision_recall_curve, auc
 
 # 定義伺服器類別，用於聯邦學習中的全局協調
 class Server(object):
@@ -52,6 +53,8 @@ class Server(object):
 
         self.rs_test_acc = []  # 測試準確率記錄
         self.rs_test_auc = []  # 測試 AUC 記錄
+        self.rs_test_f1 = []   # 測試 F1 分數記錄
+        self.rs_test_auc_pr = []  # 測試 AUC-PR 記錄
         self.rs_train_loss = []  # 訓練損失記錄
 
         self.times = times  # 執行次數
@@ -81,6 +84,8 @@ class Server(object):
         self.acc_data = []  # 準確率數據
         self.loss_data = []  # 損失數據
         self.auc_data = []  # AUC 數據
+        self.f1_data = []   # F1 分數數據
+        self.auc_pr_data = []  # AUC-PR 數據
         self.select_clients_algorithm = args.select_clients_algorithm  # 客戶端選擇演算法
         self.server = args.algorithm  # 伺服器演算法
         self.Budget = []  # 預算記錄
@@ -158,13 +163,14 @@ class Server(object):
         return selected_clients
 
     def test_metrics_all(self, client_model, testloaderfull):
-        """測試模型效能，返回總正確屬性數和有效屬性數"""
+        """測試模型效能，返回總正確屬性數、有效屬性數、AUC、F1 分數和 AUC-PR"""
         client_model.eval()
 
         test_acc = 0  # 總正確屬性數
         test_num = 0
         y_prob = []
         y_true = []
+        y_pred = []
         
         if self.is_multilabel:
             correct_per_label = torch.zeros(self.num_classes).to(self.device)
@@ -174,6 +180,7 @@ class Server(object):
         with torch.no_grad():
             for x, y in testloaderfull:
                 x = x.to(self.device)
+                output = client_model(x)
                 if self.is_multilabel:
                     y = y.to(self.device).float()
                     pred = (torch.sigmoid(output) > 0.5).float()
@@ -181,10 +188,12 @@ class Server(object):
                     correct_per_label += torch.sum(pred == y, dim=0)
                     total_per_label += y.shape[0]
                     valid_attributes += (torch.sum(y, dim=0) > 0).float() * (torch.sum(1 - y, dim=0) > 0).float()
+                    y_pred.append(pred.detach().cpu().numpy())
                 else:
                     y = y.to(self.device).long()
-                    output = client_model(x)
-                    test_acc += torch.sum(torch.argmax(output, dim=1) == y).item()
+                    pred = torch.argmax(output, dim=1)
+                    test_acc += torch.sum(pred == y).item()
+                    y_pred.append(pred.detach().cpu().numpy())
 
                 test_num += y.shape[0]
                 y_prob.append(output.detach().cpu().numpy())
@@ -201,22 +210,46 @@ class Server(object):
 
         if test_num == 0:
             if self.is_multilabel:
-                return 0, 0, 0.0, torch.zeros(self.num_classes)
-            return 0, 0, 0.0
+                return 0, 0, 0.0, torch.zeros(self.num_classes), 0.0, 0.0
+            return 0, 0, 0.0, 0.0, 0.0
 
+        # 計算準確率
         if self.is_multilabel:
             valid_mask = (valid_attributes > 0).float()
             effective_num_attributes = torch.sum(valid_mask).item() or 1
             test_acc = test_acc / (test_num * effective_num_attributes) if test_num > 0 else 0
             label_acc = (correct_per_label / total_per_label).cpu().numpy() * valid_mask.cpu().numpy()
+        else:
+            test_acc = test_acc / test_num if test_num > 0 else 0
 
+        # 準備真實標籤和預測概率
         y_prob = np.concatenate(y_prob, axis=0)
         y_true = np.concatenate(y_true, axis=0)
-        auc = metrics.roc_auc_score(y_true, y_prob, average='micro', multi_class='ovr') if y_true.size > 0 else 0.0
-        
+        y_pred = np.concatenate(y_pred, axis=0)
+
+        # 計算 AUC
+        auc_score = metrics.roc_auc_score(y_true, y_prob, average='micro', multi_class='ovr') if y_true.size > 0 else 0.0
+
+        # 計算 F1 分數
         if self.is_multilabel:
-            return test_acc, test_num, auc, label_acc
-        return test_acc / test_num if test_num > 0 else 0, test_num, auc
+            f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
+        else:
+            f1 = f1_score(y_true.argmax(axis=1), y_pred, average='weighted', zero_division=0)
+
+        # 計算 AUC-PR
+        if self.is_multilabel:
+            precision, recall, _ = precision_recall_curve(y_true.ravel(), y_prob.ravel())
+            auc_pr = auc(recall, precision) if precision.size > 0 else 0.0
+        else:
+            auc_pr = 0.0
+            for i in range(self.num_classes):
+                precision, recall, _ = precision_recall_curve(y_true[:, i], y_prob[:, i])
+                auc_pr += auc(recall, precision) if precision.size > 0 else 0.0
+            auc_pr /= self.num_classes
+
+        if self.is_multilabel:
+            return test_acc, test_num, auc_score, label_acc, f1, auc_pr
+        return test_acc, test_num, auc_score, f1, auc_pr
 
     def params_to_vector(self, model):
         """將模型參數轉為向量"""
@@ -345,25 +378,13 @@ class Server(object):
                     temp += weight * model.state_dict()[key]
                 self.global_model.state_dict()[key].data.copy_(temp)
 
-    '''def aggregate_parameters_bn(self, clients_weight):
-        #聚合參數（含批次正規化層)
-        bn_key = ['conv1.1.weight', 'conv1.1.bias', 'conv1.1.running_mean', 'conv1.1.running_var', 'conv1.1.num_batches_tracked',
-                  'conv2.1.weight', 'conv2.1.bias', 'conv2.1.running_mean', 'conv2.1.running_var', 'conv2.1.num_batches_tracked']
-        for key in self.global_model.state_dict().keys():
-            if key not in bn_key:
-                temp = torch.zeros_like(self.global_model.state_dict()[key], dtype=torch.float32)
-                for weight, model in zip(clients_weight, self.uploaded_models):
-                    if key in model.state_dict():
-                        temp += weight * model.state_dict()[key]
-                self.global_model.state_dict()[key].data.copy_(temp)'''
-    
     def aggregate_parameters_bn(self, clients_weight):
-        """Aggregate parameters (excluding batch normalization layers)"""
-        # Dynamically identify batch normalization-related keys
+        """聚合參數（排除批次正規化層）"""
+        # 動態識別批次正規化相關鍵
         bn_keys = []
         for name, module in self.global_model.named_modules():
             if isinstance(module, torch.nn.BatchNorm2d):
-                # BN parameters: weight, bias, running_mean, running_var, num_batches_tracked
+                # BN 參數：weight, bias, running_mean, running_var, num_batches_tracked
                 bn_keys.extend([
                     f"{name}.weight",
                     f"{name}.bias",
@@ -372,16 +393,16 @@ class Server(object):
                     f"{name}.num_batches_tracked"
                 ])
 
-        # Aggregate parameters
+        # 聚合參數
         for key in self.global_model.state_dict().keys():
             if key not in bn_keys:
-                # Initialize temporary tensor for aggregation
+                # 初始化臨時張量進行聚合
                 temp = torch.zeros_like(self.global_model.state_dict()[key], dtype=torch.float32)
-                # Aggregate weighted parameters from client models
+                # 聚合客戶端模型的加權參數
                 for weight, model in zip(clients_weight, self.uploaded_models):
                     if key in model.state_dict():
                         temp += weight * model.state_dict()[key]
-                # Update global model parameters
+                # 更新全局模型參數
                 self.global_model.state_dict()[key].data.copy_(temp)
 
     def aggregate_parameters(self, clients_weight):
@@ -433,20 +454,39 @@ class Server(object):
             with h5py.File(file_path, 'w') as hf:
                 hf.create_dataset('rs_test_acc', data=self.rs_test_acc)
                 hf.create_dataset('rs_test_auc', data=self.rs_test_auc)
+                hf.create_dataset('rs_test_f1', data=self.rs_test_f1)
+                hf.create_dataset('rs_test_auc_pr', data=self.rs_test_auc_pr)
                 hf.create_dataset('rs_train_loss', data=self.rs_train_loss)
 
         acc_df = pd.DataFrame(self.acc_data)
         loss_df = pd.DataFrame(self.loss_data)
         auc_df = pd.DataFrame(self.auc_data)
+        f1_df = pd.DataFrame(self.f1_data)
+        auc_pr_df = pd.DataFrame(self.auc_pr_data)
+
+        # remove the even rows
+        acc_df = acc_df.iloc[::2]
+        loss_df = loss_df.iloc[::2]
+        auc_df = auc_df.iloc[::2]
+        f1_df = f1_df.iloc[::2]
+        auc_pr_df = auc_pr_df.iloc[::2]
 
         name = f"{self.algorithm}_{self.select_clients_algorithm}_{self.poisoned_ratio*self.num_clients}_{self.random_seed}"
         acc_df.columns = [name]
         loss_df.columns = [name]
         auc_df.columns = [name]
+        f1_df.columns = [name]
+        auc_pr_df.columns = [name]
 
         auc_dir = f"../results/{self.num_clients}/auc"
+        f1_dir = f"../results/{self.num_clients}/f1"
+        auc_pr_dir = f"../results/{self.num_clients}/auc_pr"
         os.makedirs(auc_dir, exist_ok=True)
+        os.makedirs(f1_dir, exist_ok=True)
+        os.makedirs(auc_pr_dir, exist_ok=True)
         auc_df.to_csv(os.path.join(auc_dir, f"{name}.csv"), index=False)
+        f1_df.to_csv(os.path.join(f1_dir, f"{name}.csv"), index=False)
+        auc_pr_df.to_csv(os.path.join(auc_pr_dir, f"{name}.csv"), index=False)
 
         acc_dir = f"../results/{self.num_clients}/accuracy"
         loss_dir = f"../results/{self.num_clients}/loss"
@@ -464,6 +504,28 @@ class Server(object):
         plt.legend()
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.savefig(os.path.join(auc_dir, f"{name}_auc.png"))
+        plt.close()
+
+        # 繪製並儲存 F1 分數圖表
+        plt.figure()
+        plt.plot(f1_df, label='F1 Score', color='purple')
+        plt.title('F1 Score Over Time')
+        plt.xlabel('Epochs')
+        plt.ylabel('F1 Score')
+        plt.legend()
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.savefig(os.path.join(f1_dir, f"{name}_f1.png"))
+        plt.close()
+
+        # 繪製並儲存 AUC-PR 圖表
+        plt.figure()
+        plt.plot(auc_pr_df, label='AUC-PR', color='orange')
+        plt.title('AUC-PR Over Time')
+        plt.xlabel('Epochs')
+        plt.ylabel('AUC-PR')
+        plt.legend()
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.savefig(os.path.join(auc_pr_dir, f"{name}_auc_pr.png"))
         plt.close()
 
         # 繪製並儲存準確率圖表
@@ -502,7 +564,7 @@ class Server(object):
         """測試選中客戶端的效能"""
         clients_accuracy = []
         for c in self.selected_clients:
-            ct, ns, auc = c.test_metrics_all()
+            ct, ns, auc, *rest = c.test_metrics_all()  # 解構返回的多個值
             clients_accuracy.append(ct/ns if ns > 0 else 0)
 
     def test_metrics(self):
@@ -510,22 +572,26 @@ class Server(object):
         num_samples = []
         tot_correct = []
         tot_auc = []
+        tot_f1 = []
+        tot_auc_pr = []
         label_acc_per_client = [] if self.is_multilabel else None
 
         for c in self.clients:
             if self.is_multilabel:
-                ct, ns, auc, label_acc = c.test_metrics()  # 多標籤返回 4 個值
+                ct, ns, auc, label_acc, f1, auc_pr = c.test_metrics()  # 多標籤返回 6 個值
                 label_acc_per_client.append(label_acc)
             else:
-                ct, ns, auc = c.test_metrics()  # 單標籤返回 3 個值
+                ct, ns, auc, f1, auc_pr = c.test_metrics()  # 單標籤返回 5 個值
             tot_correct.append(ct * 1.0)
             tot_auc.append(auc * ns)
+            tot_f1.append(f1 * ns)
+            tot_auc_pr.append(auc_pr * ns)
             num_samples.append(ns)
 
         ids = [c.id for c in self.clients]
         if self.is_multilabel:
-            return ids, num_samples, tot_correct, tot_auc, label_acc_per_client
-        return ids, num_samples, tot_correct, tot_auc
+            return ids, num_samples, tot_correct, tot_auc, label_acc_per_client, tot_f1, tot_auc_pr
+        return ids, num_samples, tot_correct, tot_auc, tot_f1, tot_auc_pr
 
     def train_metrics(self):
         """計算訓練效能"""
@@ -543,15 +609,19 @@ class Server(object):
         num_samples = []
         tot_correct = []
         tot_auc = []
+        tot_f1 = []
+        tot_auc_pr = []
         for c in self.clients:
             if c.id in min_trust_index:
                 continue
-            ct, ns, auc = c.test_metrics()
+            ct, ns, auc, *rest = c.test_metrics()
             tot_correct.append(ct*1.0)
             tot_auc.append(auc*ns)
+            tot_f1.append(rest[-2]*ns)  # F1 分數
+            tot_auc_pr.append(rest[-1]*ns)  # AUC-PR
             num_samples.append(ns)
         ids = [c.id for c in self.clients]
-        return ids, num_samples, tot_correct, tot_auc
+        return ids, num_samples, tot_correct, tot_auc, tot_f1, tot_auc_pr
 
     def train_metrics_trust(self, min_trust_index):
         """計算信任客戶端的訓練效能"""
@@ -567,7 +637,7 @@ class Server(object):
         return ids, num_samples, losses
 
     def evaluate(self, acc=None, loss=None):
-        """評估全局模型，按客戶端加權平均計算準確率"""
+        """評估全局模型，按客戶端加權平均計算準確率、AUC、F1 分數和 AUC-PR"""
         stats = self.test_metrics()
         stats_train = self.train_metrics()
 
@@ -575,6 +645,8 @@ class Server(object):
         if total_samples == 0:
             test_acc = 0.0
             test_auc = 0.0
+            test_f1 = 0.0
+            test_auc_pr = 0.0
             if self.is_multilabel:
                 label_acc = np.zeros(self.num_classes)
         else:
@@ -583,34 +655,52 @@ class Server(object):
                 weights = [ns / total_samples for ns in stats[1]]
                 test_acc = sum(a * w for a, w in zip(client_acc, weights))
                 test_auc = sum(stats[3]) * 1.0 / total_samples
+                test_f1 = sum(stats[5]) * 1.0 / total_samples
+                test_auc_pr = sum(stats[6]) * 1.0 / total_samples
                 label_acc_per_client = [stats[4][i] for i in range(len(stats[1]))]
                 label_acc = np.average(label_acc_per_client, weights=weights, axis=0)
             else:
                 test_acc = sum(stats[2]) * 1.0 / total_samples
                 test_auc = sum(stats[3]) * 1.0 / total_samples
+                test_f1 = sum(stats[4]) * 1.0 / total_samples
+                test_auc_pr = sum(stats[5]) * 1.0 / total_samples
 
         train_loss = sum(stats_train[2]) * 1.0 / sum(stats_train[1]) if sum(stats_train[1]) > 0 else 0.0
         accs = [a / n if n > 0 else 0 for a, n in zip(stats[2], stats[1])]
         aucs = [a / n if n > 0 else 0 for a, n in zip(stats[3], stats[1])]
+        f1s = [a / n if n > 0 else 0 for a, n in zip(stats[4 if self.is_multilabel else 4], stats[1])]
+        auc_prs = [a / n if n > 0 else 0 for a, n in zip(stats[5 if self.is_multilabel else 5], stats[1])]
 
         if acc is None:
             self.rs_test_acc.append(test_acc)
+            self.rs_test_auc.append(test_auc)
+            self.rs_test_f1.append(test_f1)
+            self.rs_test_auc_pr.append(test_auc_pr)
+            self.acc_data.append(test_acc)
+            self.auc_data.append(test_auc)
+            self.f1_data.append(test_f1)
+            self.auc_pr_data.append(test_auc_pr)
         else:
             acc.append(test_acc)
 
         if loss is None:
             self.rs_train_loss.append(train_loss)
+            self.loss_data.append(train_loss)
         else:
             loss.append(train_loss)
 
-        print("Averaged Train Loss: {:.4f}".format(train_loss))
-        print("Averaged Test Accurancy: {:.4f}".format(test_acc))
-        print("Averaged Test AUC: {:.4f}".format(test_auc))
-        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
-        print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+        print("平均訓練損失: {:.4f}".format(train_loss))
+        print("平均測試準確率: {:.4f}".format(test_acc))
+        print("平均測試 AUC: {:.4f}".format(test_auc))
+        print("平均測試 F1 分數: {:.4f}".format(test_f1))
+        print("平均測試 AUC-PR: {:.4f}".format(test_auc_pr))
+        print("標準差測試準確率: {:.4f}".format(np.std(accs)))
+        print("標準差測試 AUC: {:.4f}".format(np.std(aucs)))
+        print("標準差測試 F1 分數: {:.4f}".format(np.std(f1s)))
+        print("標準差測試 AUC-PR: {:.4f}".format(np.std(auc_prs)))
 
         if self.is_multilabel:
-            print("\nEach Attribute Prediction Accurancy（CelebA）：")
+            print("\n各屬性預測準確率（CelebA）：")
             attribute_names = [
                 "5_o_Clock_Shadow", "Arched_Eyebrows", "Attractive", "Bags_Under_Eyes", "Bald",
                 "Bangs", "Big_Lips", "Big_Nose", "Black_Hair", "Blond_Hair", "Blurry", "Brown_Hair",
@@ -621,13 +711,13 @@ class Server(object):
                 "Wearing_Hat", "Wearing_Lipstick", "Wearing_Necklace", "Wearing_Necktie", "Young"
             ]
             for i, (attr_name, attr_acc) in enumerate(zip(attribute_names, label_acc)):
-                print(f"Attribute {i+1}: {attr_name:<20} - Prediction Accuracy: {attr_acc:.4f}")
+                print(f"屬性 {i+1}: {attr_name:<20} - 預測準確率: {attr_acc:.4f}")
 
         if len(self.acc_his) >= 3:
             self.acc_his.pop(0)
         self.acc_his.append(test_acc)
 
-        return test_acc, train_loss, test_auc
+        return test_acc, train_loss, test_auc, test_f1, test_auc_pr
 
     def get_n_min(self, number, target):
         """獲取最小的 n 個值及其索引"""
@@ -661,16 +751,25 @@ class Server(object):
         if total_samples == 0:  # 避免除以 0
             test_acc = 0.0
             test_auc = 0.0
+            test_f1 = 0.0
+            test_auc_pr = 0.0
         else:
             test_acc = sum(stats[2])*1.0 / total_samples
             test_auc = sum(stats[3])*1.0 / total_samples
+            test_f1 = sum(stats[4])*1.0 / total_samples
+            test_auc_pr = sum(stats[5])*1.0 / total_samples
 
         train_loss = sum(stats_train[2])*1.0 / sum(stats_train[1]) if sum(stats_train[1]) > 0 else 0.0
         accs = [a / n if n > 0 else 0 for a, n in zip(stats[2], stats[1])]
         aucs = [a / n if n > 0 else 0 for a, n in zip(stats[3], stats[1])]
+        f1s = [a / n if n > 0 else 0 for a, n in zip(stats[4], stats[1])]
+        auc_prs = [a / n if n > 0 else 0 for a, n in zip(stats[5], stats[1])]
 
         if acc is None:
             self.rs_test_acc.append(test_acc)
+            self.rs_test_auc.append(test_auc)
+            self.rs_test_f1.append(test_f1)
+            self.rs_test_auc_pr.append(test_auc_pr)
         else:
             acc.append(test_acc)
 
@@ -683,20 +782,24 @@ class Server(object):
         print("平均訓練損失: {:.4f}".format(train_loss))
         print("平均測試準確率: {:.4f}".format(test_acc))
         print("平均測試 AUC: {:.4f}".format(test_auc))
+        print("平均測試 F1 分數: {:.4f}".format(test_f1))
+        print("平均測試 AUC-PR: {:.4f}".format(test_auc_pr))
         print("標準差測試準確率: {:.4f}".format(np.std(accs)))
         print("標準差測試 AUC: {:.4f}".format(np.std(aucs)))
+        print("標準差測試 F1 分數: {:.4f}".format(np.std(f1s)))
+        print("標準差測試 AUC-PR: {:.4f}".format(np.std(auc_prs)))
 
         if len(self.acc_his) >= 3:
             self.acc_his.pop(0)
         self.acc_his.append(test_acc)
 
-        return test_acc, train_loss, test_auc
+        return test_acc, train_loss, test_auc, test_f1, test_auc_pr
 
     def print_(self, test_acc, test_auc, train_loss):
         """列印效能指標"""
-        print("Averaged Test Accurancy: {:.4f}".format(test_acc))
-        print("Averaged Test AUC: {:.4f}".format(test_auc))
-        print("Averaged Train Loss: {:.4f}".format(train_loss))
+        print("平均測試準確率: {:.4f}".format(test_acc))
+        print("平均測試 AUC: {:.4f}".format(test_auc))
+        print("平均訓練損失: {:.4f}".format(train_loss))
 
     def check_done(self, acc_lss, top_cnt=None, div_value=None):
         """檢查是否完成訓練"""

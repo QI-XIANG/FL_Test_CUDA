@@ -200,11 +200,11 @@ class FedAvg(Server):
                 if i % self.eval_gap == 0:
                     print("\nEvaluate global model")
                     if self.select_clients_algorithm in ["RSVD", "RSVDUCB", "RSVDUCBT", "RSVDUCBTE"] and self.gradients_available:
-                        acc, train_loss, auc = self.evaluate_trust()
+                        acc, train_loss, auc = self.evaluate()
                     elif self.select_clients_algorithm in ["UCB", "GAC"]:
                         acc, train_loss, auc = self.evaluate_trust()
                     else:
-                        acc, train_loss, auc = self.evaluate()
+                        acc, train_loss, auc, f1, auc_pr_score = self.evaluate()
                     
                     self.global_accuracy_history.append(acc)
                     self.acc_data.append(acc)

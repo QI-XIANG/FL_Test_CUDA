@@ -26,6 +26,7 @@ from flcore.servers.serverfedadaptivetrimmedbulyanR import RobustFedBulyanR
 from flcore.servers.serverfedadaptivetrimmedbulyanRR import RobustFedBulyanRR
 from flcore.servers.serverfedadaptivetrimmedbulyanRRR import RobustFedBulyanRRR
 from flcore.servers.serverfedadaptivetrimmedbulyanRRRR import RobustFedBulyanRRRR
+from flcore.servers.serveravg_lstm import FedAvgLSTM
 from flcore.servers.serverARFedAvg import AdaptiveRobustFedAvg
 from flcore.servers.serverARFedAvgR import AdaptiveRobustFedAvgR
 
@@ -92,6 +93,8 @@ def run(args):
                 args.model = FedAvgCNN3(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "SVHN20" in args.dataset:
                 args.model = FedAvgCNN3(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Shakespeare_20" in args.dataset:
+                args.model = LSTMNetNew(vocab_size=6714, hidden_dim=256).to(args.device)
             else:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=10816).to(args.device)
     
@@ -104,7 +107,8 @@ def run(args):
         # select algorithm
         if args.algorithm == "FedAvg":
             server = FedAvg(args, i)
-
+        elif args.algorithm == "FedAvgLSTM":
+            server = FedAvgLSTM(args, i)
         # elif args.algorithm == "FedDqn":
         #     server = FedDQN(args, i, agent)
         elif args.algorithm == "FedThompson":

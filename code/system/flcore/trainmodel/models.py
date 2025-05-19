@@ -800,6 +800,43 @@ class LeNet(nn.Module):
 
 # ====================================================================================================================
 
+class LSTMNetNew(nn.Module):
+    def __init__(self, hidden_dim, vocab_size, num_layers=2, bidirectional=False, dropout=0.2, padding_idx=0):
+        super().__init__()
+
+        self.dropout = nn.Dropout(dropout)
+        self.embedding = nn.Embedding(vocab_size, hidden_dim, padding_idx)
+        self.lstm = nn.LSTM(input_size=hidden_dim,
+                            hidden_size=hidden_dim,
+                            num_layers=num_layers,
+                            bidirectional=bidirectional,
+                            dropout=dropout,
+                            batch_first=True)
+        dims = hidden_dim * 2 if bidirectional else hidden_dim
+        self.fc = nn.Linear(dims, vocab_size) # 修改 num_classes 為 vocab_size
+
+    def forward(self, x):
+        # x 的 shape 應該是 (batch_size, seq_length)
+        embedded = self.embedding(x) # embedded 的 shape 是 (batch_size, seq_length, hidden_dim)
+
+        # LSTM 的輸入 shape 是 (batch_size, seq_length, input_size)
+        output, (hidden, cell) = self.lstm(embedded) # output 的 shape 是 (batch_size, seq_length, hidden_dim * num_directions)
+
+        # 我們通常只使用最後一個時間步的輸出進行下一個單字預測
+        # 或者可以使用所有時間步的輸出並進行時間上的池化或注意力機制
+        # 在這個簡化的版本中，我們使用最後一個時間步的輸出
+        if self.lstm.bidirectional:
+            # 如果是雙向 LSTM，我們需要將前向和後向的 hidden state 拼接起來
+            out = torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1)
+        else:
+            out = hidden[-1, :, :] # hidden 的 shape 是 (num_layers * num_directions, batch_size, hidden_dim)
+
+        out = self.dropout(out)
+        out = self.fc(out)
+        # 注意：這裡我們不使用 log_softmax，因為 CrossEntropyLoss 會自動處理 softmax
+        return out
+
+
 class LSTMNet(nn.Module):
     def __init__(self, hidden_dim, num_layers=2, bidirectional=False, dropout=0.2, 
                 padding_idx=0, vocab_size=98635, num_classes=10):

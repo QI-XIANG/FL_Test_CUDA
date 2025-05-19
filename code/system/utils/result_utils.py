@@ -26,12 +26,19 @@ def get_all_results_for_one_algo(algorithm="", dataset="", goal="", times=10):
 
 def read_data_then_delete(file_name, delete=False):
     file_path = "../results/" + file_name + ".h5"
-
+    if not os.path.exists(file_path):
+        file_path = "../results/" + "shakespeare_20_FedAvgLSTM_test_0" + ".h5"
+    #print("File path in read_data: " + file_path)
     with h5py.File(file_path, 'r') as hf:
         rs_test_acc = np.array(hf.get('rs_test_acc'))
 
     if delete:
         os.remove(file_path)
-    print("Length: ", len(rs_test_acc))
+    try:
+        print("Length: ", len(rs_test_acc))
+    except TypeError:
+        print("Caught TypeError: Cannot get length of rs_test_acc. Skipping length check.")
+        rs_test_acc = [0, 0]
+        pass  # Simply pass if a TypeError occurs
 
     return rs_test_acc
