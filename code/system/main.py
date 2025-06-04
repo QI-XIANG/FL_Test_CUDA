@@ -80,7 +80,7 @@ def run(args):
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
             elif "Cifar10_20" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
-            elif "Cifar100_100" in args.dataset:
+            elif "Cifar100_100_alpha01" in args.dataset:
                 args.model = FedProtoCifar100().to(args.device)
             elif "omniglot" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=33856).to(args.device)
@@ -233,7 +233,8 @@ if __name__ == "__main__":
                         help="Whether to group and select clients at each round according to time cost")
     parser.add_argument('-tth', "--time_threthold", type=float, default=10000,
                         help="The threthold for droping slow clients")
-
+    #  dynamic client local training epoch
+    parser.add_argument('-dynamic', "--dynamic_training", type=int, default=0, help="Local client will training in dynamic mod") 
 
     #select client
     parser.add_argument('-sca', "--select_clients_algorithm", type=str, default = "Random")

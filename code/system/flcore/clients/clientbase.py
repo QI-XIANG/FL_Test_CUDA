@@ -36,6 +36,8 @@ class Client(object):
         self.id = id  # 客戶端編號
         self.save_folder_name = args.save_folder_name
 
+        self.dynamic = args.dynamic_training
+
         self.num_classes = args.num_classes if self.dataset.lower() != 'celeba' else 40  # CelebA 有 40 個屬性
         self.train_samples = train_samples
         self.test_samples = test_samples
@@ -56,6 +58,8 @@ class Client(object):
         self.send_slow = kwargs['send_slow']
         self.train_time_cost = {'num_rounds': 0, 'total_cost': 0.0}
         self.send_time_cost = {'num_rounds': 0, 'total_cost': 0.0}
+
+        self.global_rounds = args.global_rounds  # Server聚合執行次數
 
         self.privacy = args.privacy
         self.dp_sigma = args.dp_sigma

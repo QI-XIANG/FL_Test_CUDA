@@ -689,18 +689,18 @@ class Server(object):
         else:
             loss.append(train_loss)
 
-        print("平均訓練損失: {:.4f}".format(train_loss))
-        print("平均測試準確率: {:.4f}".format(test_acc))
-        print("平均測試 AUC: {:.4f}".format(test_auc))
-        print("平均測試 F1 分數: {:.4f}".format(test_f1))
-        print("平均測試 AUC-PR: {:.4f}".format(test_auc_pr))
-        print("標準差測試準確率: {:.4f}".format(np.std(accs)))
-        print("標準差測試 AUC: {:.4f}".format(np.std(aucs)))
-        print("標準差測試 F1 分數: {:.4f}".format(np.std(f1s)))
-        print("標準差測試 AUC-PR: {:.4f}".format(np.std(auc_prs)))
+        print("Average Training Loss: {:.4f}".format(train_loss))
+        print("Average Test Accuracy: {:.4f}".format(test_acc))
+        print("Average Test AUC: {:.4f}".format(test_auc))
+        print("Average Test F1 Score: {:.4f}".format(test_f1))
+        print("Average Test AUC-PR: {:.4f}".format(test_auc_pr))
+        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
+        print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+        print("Std Test F1 Score: {:.4f}".format(np.std(f1s)))
+        print("Std Test AUC-PR: {:.4f}".format(np.std(auc_prs)))
 
         if self.is_multilabel:
-            print("\n各屬性預測準確率（CelebA）：")
+            print("\nEach Attribute Prediction Accuracy（CelebA）：")
             attribute_names = [
                 "5_o_Clock_Shadow", "Arched_Eyebrows", "Attractive", "Bags_Under_Eyes", "Bald",
                 "Bangs", "Big_Lips", "Big_Nose", "Black_Hair", "Blond_Hair", "Blurry", "Brown_Hair",
@@ -797,9 +797,9 @@ class Server(object):
 
     def print_(self, test_acc, test_auc, train_loss):
         """列印效能指標"""
-        print("平均測試準確率: {:.4f}".format(test_acc))
-        print("平均測試 AUC: {:.4f}".format(test_auc))
-        print("平均訓練損失: {:.4f}".format(train_loss))
+        print("Average Test Accuracy: {:.4f}".format(test_acc))
+        print("Average Test AUC: {:.4f}".format(test_auc))
+        print("Average Training Loss: {:.4f}".format(train_loss))
 
     def check_done(self, acc_lss, top_cnt=None, div_value=None):
         """檢查是否完成訓練"""
