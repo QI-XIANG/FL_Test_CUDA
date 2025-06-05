@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch import nn, Tensor
 from torchvision.models import resnet18, ResNet18_Weights
+from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
 
 batch_size = 10
 
@@ -432,6 +433,191 @@ class FedProtoCifar100(nn.Module):
         x = self.feature_extractor(x)
         x = x.view(x.size(0), -1)  # Flatten the tensor
         x = self.fc(x)
+        return x
+
+class FedProtoCINIC10(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FedProtoCINIC10, self).__init__()
+        # Utilize a pretrained ResNet-18 backbone for feature extraction
+        resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+        self.feature_extractor = nn.Sequential(*list(resnet.children())[:-1])  # Remove the final classification layer
+        self.fc = nn.Linear(resnet.fc.in_features, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        x = x.view(x.size(0), -1)  # Flatten the tensor
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------
+
+class FedProtoCINIC10_V2(nn.Module):
+    """
+    A neural network model designed for Federated Learning on the CINIC-10 dataset.
+    This model uses a pre-trained backbone (ResNet-18 or MobileNetV2) and
+    adapts its initial layers to directly handle 32x32 input images *without resizing*.
+    It serves as a feature extractor with a new classification head.
+
+    This architecture is suitable for prototype-based FL algorithms that address
+    non-IID data and class imbalance, while being mindful of client
+    computational constraints by keeping input size small.
+
+    為 CINIC-10 資料集設計的神經網路模型，用於聯邦學習。
+    此模型使用預訓練主幹（ResNet-18 或 MobileNetV2），
+    並調整其初始層以直接處理 32x32 輸入圖像，*無需調整大小*。
+    它作為特徵提取器，並帶有一個新的分類頭。
+
+    此架構適用於基於原型的聯邦學習演算法，以解決
+    非獨立同分佈 (non-IID) 數據和類別不平衡問題，同時藉由保持較小的輸入大小，
+    考慮到客戶端的計算限制。
+    """
+    def __init__(self, num_classes=10, architecture='resnet18'):
+        """
+        Initializes the FedProtoCINIC10_V2 model with a specified pre-trained backbone,
+        adapted for 32x32 input images without explicit resizing.
+
+        Parameters:
+            num_classes (int): The number of output classes. For CINIC-10, this is 10.
+            architecture (str): The name of the pre-trained backbone architecture to use.
+                                Supported: 'resnet18', 'mobilenetv2'.
+
+        使用指定的預訓練主幹初始化 FedProtoCINIC10_V2 模型，
+        並針對 32x32 輸入圖像進行調整，無需顯式調整大小。
+
+        參數：
+            num_classes (int): 輸出類別的數量。對於 CINIC-10，這是 10。
+            architecture (str): 要使用的預訓練主幹架構的名稱。
+                                支援：'resnet18', 'mobilenetv2'。
+        """
+        super(FedProtoCINIC10_V2, self).__init__()
+        
+        self.architecture = architecture.lower()
+        feature_dim = 0 # Initialize feature dimension
+
+        if self.architecture == 'resnet18':
+            # Load pre-trained ResNet-18
+            # 載入預訓練的 ResNet-18
+            backbone = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+            
+            # --- Adaptation for 32x32 input for ResNet-18 without resizing ---
+            # Original ResNet-18's conv1 (7x7, stride 2) and MaxPool2d aggressively
+            # downsample, which is unsuitable for 32x32 images without losing too much info.
+            # We modify conv1 to be 3x3 with stride 1 (to preserve resolution)
+            # and effectively remove the initial MaxPool2d layer.
+            # Note: This means the `conv1` layer's pre-trained weights are discarded and it's
+            # randomly initialized. The rest of the deeper ResNet layers still benefit from pre-training.
+            #
+            # --- 針對 32x32 輸入的 ResNet-18 適應（不調整大小）---
+            # 原始 ResNet-18 的 conv1 (7x7, 步幅 2) 和 MaxPool2d 會激進地下採樣，
+            # 這對於 32x32 圖像來說，會丟失太多信息。
+            # 我們將 conv1 修改為 3x3，步幅 1（以保留分辨率），
+            # 並實際移除初始的 MaxPool2d 層。
+            # 注意：這意味著 `conv1` 層的預訓練權重將被丟棄，並隨機初始化。
+            # 其餘更深層的 ResNet 層仍然受益於預訓練。
+            
+            backbone.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            backbone.maxpool = nn.Identity() # nn.Identity acts as a no-op layer, effectively removing MaxPool2d
+            
+            print("ResNet-18: Adapted initial conv1 and removed maxpool for 32x32 inputs (no resizing).")
+
+            # The feature extractor is all layers except the final 'fc' layer
+            # 特徵提取器是除了最終 'fc' 層之外的所有層
+            self.feature_extractor = nn.Sequential(*list(backbone.children())[:-1])
+            feature_dim = backbone.fc.in_features # This is 512 for ResNet-18
+
+        elif self.architecture == 'mobilenetv2':
+            # Load pre-trained MobileNetV2
+            # 載入預訓練的 MobileNetV2
+            backbone = mobilenet_v2(weights=MobileNetV2_Weights.IMAGENET1K_V1)
+
+            # --- Adaptation for 32x32 input for MobileNetV2 without resizing ---
+            # MobileNetV2's first layer (features[0][0]) typically has a stride of 2,
+            # which quickly downsamples 32x32 images to 16x16.
+            # We change its stride to 1 to retain more resolution in early layers.
+            # Note: This will re-initialize the weights of this specific convolutional layer.
+            # MobileNetV2's `features` module usually ends with AdaptiveAvgPool2d,
+            # which automatically handles the final spatial flattening regardless of exact input size.
+            #
+            # --- 針對 32x32 輸入的 MobileNetV2 適應（不調整大小）---
+            # MobileNetV2 的第一層 (features[0][0]) 通常步幅為 2，
+            # 會迅速將 32x32 圖像下採樣至 16x16。
+            # 我們將其步幅更改為 1，以在早期層中保留更多分辨率。
+            # 注意：這將重新初始化此特定卷積層的權重。
+            # MobileNetV2 的 `features` 模組通常以 AdaptiveAvgPool2d 結尾，
+            # 無論確切的輸入大小如何，它都會自動處理最終的空間展平。
+            
+            # The first conv layer in MobileNetV2 is features[0][0]
+            # MobileNetV2 中的第一個卷積層是 features[0][0]
+            original_first_conv = backbone.features[0][0]
+            backbone.features[0][0] = nn.Conv2d(
+                original_first_conv.in_channels, 
+                original_first_conv.out_channels, 
+                kernel_size=original_first_conv.kernel_size, 
+                stride=1, # Change stride from 2 to 1
+                padding=original_first_conv.padding, 
+                bias=original_first_conv.bias
+            )
+            print("MobileNetV2: Adapted initial conv stride for 32x32 inputs (no resizing).")
+
+            self.feature_extractor = backbone.features
+            feature_dim = backbone.last_channel # This is 1280 for MobileNetV2
+
+        else:
+            raise ValueError(f"Unsupported architecture: {architecture}. Choose from 'resnet18' or 'mobilenetv2'.")
+            
+        # The final classification layer is a new Linear layer adapted for num_classes.
+        # It takes the extracted features and maps them to the number of classes for CINIC-10.
+        # 最終分類層是一個新的線性層，適應於 num_classes。
+        # 它接收提取的特徵並將它們映射到 CINIC-10 的類別數量。
+        self.fc = nn.Linear(feature_dim, num_classes)
+
+    def forward(self, x):
+        """
+        Performs a forward pass through the network, producing classification logits.
+
+        參數：
+            x (torch.Tensor): 輸入圖像張量。
+
+        返回：
+            torch.Tensor: 模型的分類 logits。
+        """
+        # Pass the input through the feature extractor
+        # 將輸入通過特徵提取器
+        x = self.feature_extractor(x)
+        
+        # Flatten the tensor. For these adapted backbones (after their final AvgPool),
+        # the output will be (batch_size, channels, 1, 1). We flatten it to (batch_size, channels).
+        # 展平張量。對於這些適應後的主幹（在它們的最終 AvgPool 之後），
+        # 輸出將是 (batch_size, channels, 1, 1)。我們將其展平為 (batch_size, channels)。
+        x = x.view(x.size(0), -1)
+        
+        # Pass the flattened features through the final classification layer
+        # 將展平後的特徵通過最終分類層
+        x = self.fc(x)
+        return x
+
+    def get_features(self, x):
+        """
+        Extracts features (embeddings) from the input before the final classification layer.
+        This method is highly useful in prototype-based federated learning (like FedProto)
+        where class prototypes (centroids) are computed from these feature embeddings
+        to mitigate issues like non-IID data and class imbalance.
+
+        在最終分類層之前從輸入中提取特徵（嵌入）。
+        此方法在基於原型的聯邦學習（例如 FedProto）中非常有用，
+        其中類別原型（中心點）是從這些特徵嵌入計算的，
+        以減輕非獨立同分佈 (non-IID) 數據和類別不平衡等問題。
+
+        參數：
+            x (torch.Tensor): 輸入圖像張量。
+
+        返回：
+            torch.Tensor: 從輸入圖像中提取的特徵嵌入。
+        """
+        x = self.feature_extractor(x)
+        # Flatten the features to (batch_size, embedding_dim)
+        # 將特徵展平為 (batch_size, embedding_dim)
+        x = x.view(x.size(0), -1)
         return x
 
 #---------------------------------------------------------------------------------------------------

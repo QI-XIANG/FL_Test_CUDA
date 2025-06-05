@@ -39,3 +39,4 @@ FL_Test_Env_CUDA/dataset/Cifar100_100/rawdata/cifar-100-python/train
 !FL_Test_Env_CUDA/dataset/generate_shakespeare.py
 !FL_Test_Env_CUDA/dataset/generate_svhn.py
 FL_Test_Env_CUDA/.git/objects/pack/pack-0cd5bfacebc44f35374f36c3fde59421063eb70f.pack
+FL_Test_Env_CUDA/dataset/CINIC10/CINIC-10.tar.gz

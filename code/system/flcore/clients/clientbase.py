@@ -10,6 +10,7 @@ from sklearn.preprocessing import label_binarize
 from torchvision import transforms
 from sklearn.metrics import f1_score, precision_recall_curve, auc as sklearn_auc
 import random
+import torch.nn.functional as F
 
 # 聯邦學習客戶端類，支援 CelebA 多標籤分類
 class Client(object):
@@ -38,14 +39,15 @@ class Client(object):
 
         self.dynamic = args.dynamic_training
 
-        self.num_classes = args.num_classes if self.dataset.lower() != 'celeba' else 40  # CelebA 有 40 個屬性
+        # CelebA 有 40 個屬性，其他資料集使用 args.num_classes
+        self.num_classes = args.num_classes if self.dataset.lower() != 'celeba' else 40
         self.train_samples = train_samples
         self.test_samples = test_samples
         self.batch_size = args.batch_size
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.is_multilabel = (self.dataset.lower() == 'celeba')  # 添加多標籤標誌
-        self.data_augmentation = args.data_augmentation if hasattr(args, 'data_augmentation') else True
+        self.data_augmentation = True
 
         # 檢查是否有 BatchNorm 層（這裡使用 GroupNorm，無需調整）
         self.has_BatchNorm = False
@@ -81,37 +83,52 @@ class Client(object):
     def _apply_data_augmentation_cifar100(self, images):
         """
         對 CIFAR-100 的輸入圖像應用本地資料增強。
+        應用多種隨機變換組合，而不是單一變換。
 
         參數：
-            images (torch.Tensor): 一批圖像資料。
+            images (torch.Tensor): 一批圖像資料 (N, C, H, W)。
 
         返回：
             torch.Tensor: 增強後的圖像資料。
         """
-        if self.data_augmentation == 'flip':
-            if random.random() > 0.5:
-                images = torch.flip(images, dims=[3])  # 水平翻轉
-        elif self.data_augmentation == 'rotate':
-            angle = random.uniform(-15, 15)
-            images = transforms.functional.rotate(images, angle)
-        elif self.data_augmentation == 'crop':
-            i, j, h, w = transforms.RandomCrop.get_params(
-                images, output_size=(28, 28)  # CIFAR-100 是 32x32, 裁剪到 28x28
-            )
-            images = transforms.functional.crop(images, i, j, h, w)
-            images = torch.nn.functional.interpolate(images.unsqueeze(0), size=(32, 32), mode='bilinear', align_corners=False).squeeze(0)
-        elif self.data_augmentation == 'random_affine':
-            degrees = 15
-            translate = (0.1, 0.1)
-            scale = (0.9, 1.1)
-            shear = (-10, 10)
-            images = transforms.functional.affine(images, angle=random.uniform(-degrees, degrees),
-                                                   translate=(int(random.uniform(-translate[0] * 32, translate[0] * 32)),
+        augmented_images_batch = []
+        for i in range(images.shape[0]):
+            image = images[i] # 處理單張圖像
+            
+            random_number = random.randint(1, 5) # 對每張圖像隨機選擇一個增強
+
+            if random_number == 1:  # flip
+                if random.random() > 0.5:
+                    image = torch.flip(image, dims=[-1])  # 水平翻轉
+            elif random_number == 2:  # rotate
+                angle = random.uniform(-15, 15)
+                # rotate 函數需要 (H, W) 或 (C, H, W)，如果輸入是 (C, H, W) 則沒問題
+                image = transforms.functional.rotate(image, angle)
+            elif random_number == 3:  # crop
+                # 對於批量圖像，需要確保 crop 參數對應每張圖像
+                # 這裡假設圖像形狀為 (C, H, W)，因此我們對每個圖像進行裁剪
+                # CIFAR-100 是 32x32，裁剪到 28x28，然後調整回 32x32
+                i_crop, j_crop, h_crop, w_crop = transforms.RandomCrop.get_params(
+                    image, output_size=(28, 28)
+                )
+                image = transforms.functional.crop(image, i_crop, j_crop, h_crop, w_crop)
+                image = F.interpolate(image.unsqueeze(0), size=(32, 32), mode='bilinear', align_corners=False).squeeze(0)
+            elif random_number == 4:  # random affine
+                degrees = 15
+                translate = (0.1, 0.1)
+                scale = (0.9, 1.1)
+                shear = (-10, 10)
+                image = transforms.functional.affine(image, 
+                                                    angle=random.uniform(-degrees, degrees),
+                                                    translate=(int(random.uniform(-translate[0] * 32, translate[0] * 32)),
                                                                 int(random.uniform(-translate[1] * 32, translate[1] * 32))),
-                                                   scale=random.uniform(scale[0], scale[1]),
-                                                   shear=(random.uniform(-shear[0], shear[0]), random.uniform(-shear[1], shear[1])))
-        # 可以添加更多 CIFAR-100 特定的增強策略
-        return images
+                                                    scale=random.uniform(scale[0], scale[1]),
+                                                    shear=(random.uniform(-shear[0], shear[0]), random.uniform(-shear[1], shear[1])))
+            elif random_number == 5:
+                image = image  # do not change the image
+            augmented_images_batch.append(image)
+        
+        return torch.stack(augmented_images_batch) # 將單張圖像重新堆疊成批次
 
     def load_train_data(self, batch_size=None):
         """
@@ -126,46 +143,42 @@ class Client(object):
         if batch_size is None:
             batch_size = self.batch_size
         train_data = read_client_data(self.dataset, self.id, is_train=True)
-        train_data_poison = []
-        augmented_train_data = []
-
-        if self.is_multilabel:
-            # CelebA 的毒化邏輯：隨機翻轉部分屬性標籤
-            if self.poisoned:
-                for data in train_data:
-                    data = list(data)
-                    labels = data[1].clone()  # 假設標籤為 (40,) 的張量
+        
+        # 毒化邏輯
+        if self.poisoned:
+            poisoned_data = []
+            for img, label in train_data:
+                if self.is_multilabel:
+                    # CelebA 的毒化邏輯：隨機翻轉部分屬性標籤
+                    labels = label.clone()  # 假設標籤為 (40,) 的張量
                     # 隨機選擇 10% 的屬性進行翻轉
-                    flip_indices = np.random.choice(40, int(40 * 0.1), replace=False)
+                    flip_indices = np.random.choice(self.num_classes, int(self.num_classes * 0.1), replace=False)
                     for idx in flip_indices:
                         labels[idx] = 1 - labels[idx]  # 0->1 或 1->0
-                    data[1] = labels
-                    train_data_poison.append(tuple(data))
-                train_data = train_data_poison
-        else:
-            # 其他資料集的毒化邏輯（單標籤翻轉）
-            if self.poisoned:
-                for data in train_data:
-                    data = list(data)
-                    if data[1] == 1:
-                        data[1] = torch.tensor(9)
-                    elif data[1] == 2:
-                        data[1] = torch.tensor(7)
-                    elif data[1] == 9:
-                        data[1] = torch.tensor(1)
-                    train_data_poison.append(tuple(data))
-                train_data = train_data_poison
+                    poisoned_data.append((img, labels))
+                else:
+                    # 其他資料集的毒化邏輯（單標籤翻轉）
+                    # 這裡的毒化規則是硬編碼的，您可以根據需求修改
+                    if label == 1:
+                        label = torch.tensor(9)
+                    elif label == 2:
+                        label = torch.tensor(7)
+                    elif label == 9:
+                        label = torch.tensor(1)
+                    poisoned_data.append((img, label))
+            train_data = poisoned_data
 
+        augmented_train_data = []
         # 僅對 CIFAR-100 應用本地資料增強
-        if self.data_augmentation is not None and self.dataset.lower() == 'cifar100_100':
-            #print("Start data augmentation.")
+        if self.data_augmentation and self.dataset.lower() == 'cifar100_100_alpha01':
+            #print("Local Data Enhancement...")
             for images, labels in train_data:
-                augmented_images = self._apply_data_augmentation_cifar100(images)
+                augmented_images = self._apply_data_augmentation_cifar100(images.unsqueeze(0)).squeeze(0) # 傳入單張圖像，並處理維度
                 augmented_train_data.append((augmented_images, labels))
-            train_loader = DataLoader(augmented_train_data, batch_size, drop_last=True, shuffle=True) # 增強後需要 shuffle
-            #print("Finish data augmentation.")
+                augmented_train_data.append((images, labels))  # original data
+            train_loader = DataLoader(augmented_train_data, batch_size, drop_last=True, shuffle=True)  # 增強後需要 shuffle
         else:
-            train_loader = DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
+            train_loader = DataLoader(train_data, batch_size, drop_last=True, shuffle=True) # 訓練資料通常需要 shuffle
 
         return train_loader
 
