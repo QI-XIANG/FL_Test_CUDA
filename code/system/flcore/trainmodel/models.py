@@ -519,6 +519,7 @@ class FedProtoCINIC10_V2(nn.Module):
             backbone.maxpool = nn.Identity() # nn.Identity acts as a no-op layer, effectively removing MaxPool2d
             
             print("ResNet-18: Adapted initial conv1 and removed maxpool for 32x32 inputs (no resizing).")
+            print("ResNet-18: 已調整初始 conv1 並移除 maxpool 以適應 32x32 輸入（不調整大小）。")
 
             # The feature extractor is all layers except the final 'fc' layer
             # 特徵提取器是除了最終 'fc' 層之外的所有層
@@ -528,7 +529,7 @@ class FedProtoCINIC10_V2(nn.Module):
         elif self.architecture == 'mobilenetv2':
             # Load pre-trained MobileNetV2
             # 載入預訓練的 MobileNetV2
-            backbone = mobilenet_v2(weights=MobileNetV2_Weights.IMAGENET1K_V1)
+            backbone = mobilenet_v2(weights=MobileNet_V2_Weights.IMAGENET1K_V1)
 
             # --- Adaptation for 32x32 input for MobileNetV2 without resizing ---
             # MobileNetV2's first layer (features[0][0]) typically has a stride of 2,
@@ -558,6 +559,7 @@ class FedProtoCINIC10_V2(nn.Module):
                 bias=original_first_conv.bias
             )
             print("MobileNetV2: Adapted initial conv stride for 32x32 inputs (no resizing).")
+            print("MobileNetV2: 已調整初始卷積步幅以適應 32x32 輸入（不調整大小）。")
 
             self.feature_extractor = backbone.features
             feature_dim = backbone.last_channel # This is 1280 for MobileNetV2
@@ -585,10 +587,17 @@ class FedProtoCINIC10_V2(nn.Module):
         # 將輸入通過特徵提取器
         x = self.feature_extractor(x)
         
-        # Flatten the tensor. For these adapted backbones (after their final AvgPool),
-        # the output will be (batch_size, channels, 1, 1). We flatten it to (batch_size, channels).
-        # 展平張量。對於這些適應後的主幹（在它們的最終 AvgPool 之後），
-        # 輸出將是 (batch_size, channels, 1, 1)。我們將其展平為 (batch_size, channels)。
+        # Apply AdaptiveAvgPool2d to ensure 1x1 spatial dimensions before flattening.
+        # This is crucial for models like MobileNetV2 whose feature_extractor might
+        # output spatial dimensions larger than 1x1 before flattening,
+        # or for ResNet when the original MaxPool2d is removed.
+        # 應用 AdaptiveAvgPool2d 以確保在展平之前具有 1x1 的空間維度。
+        # 這對於像 MobileNetV2 這樣，其 feature_extractor 在展平之前可能輸出
+        # 大於 1x1 的空間維度的模型，或對於移除原始 MaxPool2d 的 ResNet 來說，至關重要。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
+        # Flatten the tensor from (batch_size, channels, 1, 1) to (batch_size, channels).
+        # 展平張量。從 (batch_size, channels, 1, 1) 展平為 (batch_size, channels)。
         x = x.view(x.size(0), -1)
         
         # Pass the flattened features through the final classification layer
@@ -615,6 +624,11 @@ class FedProtoCINIC10_V2(nn.Module):
             torch.Tensor: 從輸入圖像中提取的特徵嵌入。
         """
         x = self.feature_extractor(x)
+        
+        # Apply AdaptiveAvgPool2d here as well for consistency in feature extraction.
+        # 在此處也應用 AdaptiveAvgPool2d 以保持特徵提取的一致性。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
         # Flatten the features to (batch_size, embedding_dim)
         # 將特徵展平為 (batch_size, embedding_dim)
         x = x.view(x.size(0), -1)

@@ -84,10 +84,10 @@ def run(args):
                 #args.model = FedProtoCifar100().to(args.device)
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "CINIC10_100_alpha01" in args.dataset:
-                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
                 #args.model = FedProtoCINIC10().to(args.device)
-                args.model = FedProtoCINIC10_V2(num_classes=args.num_classes, architecture='resnet18')
-                args.model = args.model.to(args.device)
+                #args.model = FedProtoCINIC10_V2(num_classes=args.num_classes, architecture='mobilenetv2')
+                #args.model = args.model.to(args.device)
             elif "omniglot" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=33856).to(args.device)
                 # args.model = CifarNet(num_classes=args.num_classes).to(args.device)
