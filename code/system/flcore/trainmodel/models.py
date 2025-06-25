@@ -5,6 +5,7 @@ from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch import nn, Tensor
 from torchvision.models import resnet18, ResNet18_Weights
 from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights # For MobileNetV3-Small pre-trained weights
 
 batch_size = 10
 
@@ -448,6 +449,165 @@ class FedProtoCINIC10(nn.Module):
         x = x.view(x.size(0), -1)  # Flatten the tensor
         x = self.fc(x)
         return x
+    
+#---------------------------------------------------------------------------------------------------
+
+class FedProtoCIFAR100_V3(nn.Module):
+    """
+    Optimized Neural Network Model for Federated Learning on CIFAR-100.
+    This model uses a pre-trained **MobileNetV3-Small** backbone as a **frozen feature extractor**
+    and a lightweight, trainable classification head.
+
+    It's designed to:
+    1.  **Reduce Computational Overhead:** By freezing the majority of parameters (the backbone),
+        client-side training only involves updating a small classification head. This significantly
+        lowers FLOPs, memory usage, and communication costs.
+    2.  **Leverage Pre-training:** Still benefits from rich features learned on ImageNet.
+    3.  **Improve Performance on Small Images:** Adapts the initial convolutional layer for 32x32
+        inputs to preserve more spatial information.
+    4.  **Mitigate Non-IID Issues:** A smaller trainable part is less prone to overfitting
+        small, non-IID client datasets, leading to more stable aggregation.
+
+    為 CIFAR-100 設計的優化神經網路模型，用於聯邦學習。
+    此模型使用預訓練的 **MobileNetV3-Small** 主幹作為**凍結的特徵提取器**，
+    並帶有一個輕量級、可訓練的分類頭。
+
+    它的設計目標是：
+    1.  **降低計算開銷：** 通過凍結大部分參數（主幹），
+        客戶端訓練僅涉及更新一個小型分類頭。這顯著降低了 FLOPs、內存使用量和通信成本。
+    2.  **利用預訓練：** 仍然受益於在 ImageNet 上學習到的豐富特徵。
+    3.  **提高小圖像性能：** 調整初始卷積層以適應 32x32 輸入，以保留更多空間信息。
+    4.  **緩解非獨立同分佈問題：** 較小的可訓練部分不易在小型、非獨立同分佈的客戶端數據集上過擬合，
+        從而實現更穩定的聚合。
+    """
+    # Renamed class to reflect CIFAR-100 dataset
+    def __init__(self, num_classes=100): # Key Change: Default num_classes set to 100 for CIFAR-100
+        """
+        Initializes the FedProtoCIFAR100_V3 with a pre-trained MobileNetV3-Small backbone.
+
+        Parameters:
+            num_classes (int): The number of output classes. For CIFAR-100, this is 100.
+        """
+        super(FedProtoCIFAR100_V3, self).__init__()
+        
+        # Load pre-trained MobileNetV3-Small model weights from ImageNet.
+        # 載入預訓練的 MobileNetV3-Small 模型權重 (來自 ImageNet)。
+        backbone = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
+
+        # --- Adaptation for 32x32 input for MobileNetV3-Small without explicit resizing ---
+        # MobileNetV3-Small's first convolutional layer (`features[0][0]`) typically has a stride of 2,
+        # which aggressively downsamples inputs. For small 32x32 images, this can lead to loss of vital
+        # spatial information. We modify its stride to 1 to retain more resolution in early layers.
+        # Note: This will re-initialize the weights of this specific convolutional layer,
+        # but the rest of the backbone maintains its pre-trained weights.
+        
+        # MobileNetV3-Small 的第一個卷積層 (`features[0][0]`) 通常步幅為 2，
+        # 這會激進地下採樣輸入。對於 32x32 的小圖像，這可能導致丟失重要的空間信息。
+        # 我們將其步幅更改為 1，以在早期層中保留更多分辨率。
+        # 注意：這將重新初始化此特定卷積層的權重，
+        # 但主幹的其餘部分仍保留其預訓練權重。
+        
+        original_first_conv = backbone.features[0][0]
+        backbone.features[0][0] = nn.Conv2d(
+            in_channels=original_first_conv.in_channels, 
+            out_channels=original_first_conv.out_channels, 
+            kernel_size=original_first_conv.kernel_size, 
+            stride=1, # Key change: Reduce stride from 2 to 1 for small inputs
+            padding=original_first_conv.padding, 
+            bias=original_first_conv.bias
+        )
+        print("MobileNetV3-Small: Adapted initial conv stride for 32x32 inputs (no resizing).")
+        
+        # --- Freeze the entire feature extractor backbone ---
+        # This is CRITICAL for reducing client-side computational load.
+        # Clients will only train the much smaller classification head.
+        # The `features` module of MobileNetV3 acts as the feature extractor.
+        
+        # 凍結整個特徵提取器主幹。
+        # 這對於降低客戶端計算負載至關重要。
+        # 客戶端將只訓練小得多的分類頭。
+        # MobileNetV3 的 `features` 模組作為特徵提取器。
+        self.feature_extractor = backbone.features
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False # Set requires_grad to False to freeze parameters
+        print("MobileNetV3-Small backbone (feature_extractor) frozen.")
+
+        # --- Define the new, trainable classification head ---
+        # The original MobileNetV3 classifier usually consists of a linear layer,
+        # followed by BatchNorm and another linear layer. We'll replace the entire
+        # classifier with a single linear layer suitable for our `num_classes`.
+        # This is the only part of the model whose parameters will be updated during client training.
+        
+        # 定義新的、可訓練的分類頭。
+        # 原始 MobileNetV3 分類器通常由一個線性層、BatchNorm 和另一個線性層組成。
+        # 我們將用一個適合我們 `num_classes` 的單個線性層替換整個分類器。
+        # 這是模型中唯一在客戶端訓練期間更新其參數的部分。
+        
+        # Get the input feature dimension for the new classifier from the original model's last layer.
+        feature_dim = backbone.classifier[0].in_features 
+        self.classifier = nn.Linear(feature_dim, num_classes) # Key Change: num_classes passed here will be 100
+        print(f"New classifier initialized with {feature_dim} input features and {num_classes} output classes.")
+
+    def forward(self, x):
+        """
+        Performs a forward pass through the network, producing classification logits.
+
+        Parameters:
+            x (torch.Tensor): Input image tensor.
+
+        Returns:
+            torch.Tensor: The classification logits from the model.
+        """
+        # Pass input through the frozen feature extractor (inference mode for these layers)
+        # 即使模型在訓練模式，這些凍結層也應行為如評估模式
+        self.feature_extractor.eval() 
+        with torch.no_grad(): # Ensure no gradients are computed for the frozen backbone
+            x = self.feature_extractor(x)
+        
+        # Apply Adaptive Average Pooling to ensure 1x1 spatial dimensions before flattening.
+        # This makes the output feature vector size independent of the input spatial dimensions
+        # and prepares it for the linear classification layer.
+        # 應用自適應平均池化以確保在展平之前具有 1x1 的空間維度。
+        # 這使得輸出特徵向量的大小與輸入空間維度無關，
+        # 並為線性分類層做好準備。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
+        # Flatten the tensor from (batch_size, channels, 1, 1) to (batch_size, channels).
+        # 展平張量，從 (batch_size, channels, 1, 1) 展平為 (batch_size, channels)。
+        x = x.view(x.size(0), -1)
+        
+        # Pass the flattened features through the trainable classification layer
+        # 將展平後的特徵通過可訓練的分類層
+        x = self.classifier(x)
+        return x
+
+    def get_features(self, x):
+        """
+        Extracts features (embeddings) from the input before the final classification layer.
+        This method is highly useful in prototype-based federated learning (like FedProto)
+        where class prototypes (centroids) are computed from these feature embeddings
+        to mitigate issues like non-IID data and class imbalance.
+
+        Parameters:
+            x (torch.Tensor): Input image tensor.
+
+        Returns:
+            torch.Tensor: The feature embeddings extracted from the input images.
+        """
+        # Ensure the feature extractor is in evaluation mode for consistent feature extraction
+        # (e.g., BatchNorm layers use global mean/variance)
+        self.feature_extractor.eval() 
+        with torch.no_grad(): # No gradients needed for feature extraction
+            x = self.feature_extractor(x)
+        
+        # Apply AdaptiveAvgPool2d here as well for consistency in feature extraction.
+        # 在此處也應用 AdaptiveAvgPool2d 以保持特徵提取的一致性。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
+        # Flatten the features to (batch_size, embedding_dim)
+        # 將特徵展平為 (batch_size, embedding_dim)
+        x = x.view(x.size(0), -1)
+        return x
 
 #---------------------------------------------------------------------------------------------------
 
@@ -624,6 +784,163 @@ class FedProtoCINIC10_V2(nn.Module):
             torch.Tensor: 從輸入圖像中提取的特徵嵌入。
         """
         x = self.feature_extractor(x)
+        
+        # Apply AdaptiveAvgPool2d here as well for consistency in feature extraction.
+        # 在此處也應用 AdaptiveAvgPool2d 以保持特徵提取的一致性。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
+        # Flatten the features to (batch_size, embedding_dim)
+        # 將特徵展平為 (batch_size, embedding_dim)
+        x = x.view(x.size(0), -1)
+        return x
+    
+# --- Optimized Lightweight Model with Pre-trained Backbone (MobileNetV3-Small) ---
+class FedProtoCINIC10_V3(nn.Module):
+    """
+    Optimized Neural Network Model for Federated Learning on CINIC-10.
+    This model uses a pre-trained **MobileNetV3-Small** backbone as a **frozen feature extractor**
+    and a lightweight, trainable classification head.
+
+    It's designed to:
+    1.  **Reduce Computational Overhead:** By freezing the majority of parameters (the backbone),
+        client-side training only involves updating a small classification head. This significantly
+        lowers FLOPs, memory usage, and communication costs.
+    2.  **Leverage Pre-training:** Still benefits from rich features learned on ImageNet.
+    3.  **Improve Performance on Small Images:** Adapts the initial convolutional layer for 32x32
+        inputs to preserve more spatial information.
+    4.  **Mitigate Non-IID Issues:** A smaller trainable part is less prone to overfitting
+        small, non-IID client datasets, leading to more stable aggregation.
+
+    為 CINIC-10 設計的優化神經網路模型，用於聯邦學習。
+    此模型使用預訓練的 **MobileNetV3-Small** 主幹作為**凍結的特徵提取器**，
+    並帶有一個輕量級、可訓練的分類頭。
+
+    它的設計目標是：
+    1.  **降低計算開銷：** 通過凍結大部分參數（主幹），
+        客戶端訓練僅涉及更新一個小型分類頭。這顯著降低了 FLOPs、內存使用量和通信成本。
+    2.  **利用預訓練：** 仍然受益於在 ImageNet 上學習到的豐富特徵。
+    3.  **提高小圖像性能：** 調整初始卷積層以適應 32x32 輸入，以保留更多空間信息。
+    4.  **緩解非獨立同分佈問題：** 較小的可訓練部分不易在小型、非獨立同分佈的客戶端數據集上過擬合，
+        從而實現更穩定的聚合。
+    """
+    def __init__(self, num_classes=10):
+        """
+        Initializes the FedProtoCINIC10_V3 with a pre-trained MobileNetV3-Small backbone.
+
+        Parameters:
+            num_classes (int): The number of output classes. For CINIC-10, this is 10.
+        """
+        super(FedProtoCINIC10_V3, self).__init__()
+        
+        # Load pre-trained MobileNetV3-Small model weights from ImageNet.
+        # 載入預訓練的 MobileNetV3-Small 模型權重 (來自 ImageNet)。
+        backbone = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
+
+        # --- Adaptation for 32x32 input for MobileNetV3-Small without explicit resizing ---
+        # MobileNetV3-Small's first convolutional layer (`features[0][0]`) typically has a stride of 2,
+        # which aggressively downsamples inputs. For small 32x32 images, this can lead to loss of vital
+        # spatial information. We modify its stride to 1 to retain more resolution in early layers.
+        # Note: This will re-initialize the weights of this specific convolutional layer,
+        # but the rest of the backbone maintains its pre-trained weights.
+        
+        # MobileNetV3-Small 的第一個卷積層 (`features[0][0]`) 通常步幅為 2，
+        # 這會激進地下採樣輸入。對於 32x32 的小圖像，這可能導致丟失重要的空間信息。
+        # 我們將其步幅更改為 1，以在早期層中保留更多分辨率。
+        # 注意：這將重新初始化此特定卷積層的權重，
+        # 但主幹的其餘部分仍保留其預訓練權重。
+        
+        original_first_conv = backbone.features[0][0]
+        backbone.features[0][0] = nn.Conv2d(
+            in_channels=original_first_conv.in_channels, 
+            out_channels=original_first_conv.out_channels, 
+            kernel_size=original_first_conv.kernel_size, 
+            stride=1, # Key change: Reduce stride from 2 to 1 for small inputs
+            padding=original_first_conv.padding, 
+            bias=original_first_conv.bias
+        )
+        print("MobileNetV3-Small: Adapted initial conv stride for 32x32 inputs (no resizing).")
+        
+        # --- Freeze the entire feature extractor backbone ---
+        # This is CRITICAL for reducing client-side computational load.
+        # Clients will only train the much smaller classification head.
+        # The `features` module of MobileNetV3 acts as the feature extractor.
+        
+        # 凍結整個特徵提取器主幹。
+        # 這對於降低客戶端計算負載至關重要。
+        # 客戶端將只訓練小得多的分類頭。
+        # MobileNetV3 的 `features` 模組作為特徵提取器。
+        self.feature_extractor = backbone.features
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False # Set requires_grad to False to freeze parameters
+        print("MobileNetV3-Small backbone (feature_extractor) frozen.")
+
+        # --- Define the new, trainable classification head ---
+        # The original MobileNetV3 classifier usually consists of a linear layer,
+        # followed by BatchNorm and another linear layer. We'll replace the entire
+        # classifier with a single linear layer suitable for our `num_classes`.
+        # This is the only part of the model whose parameters will be updated during client training.
+        
+        # 定義新的、可訓練的分類頭。
+        # 原始 MobileNetV3 分類器通常由一個線性層、BatchNorm 和另一個線性層組成。
+        # 我們將用一個適合我們 `num_classes` 的單個線性層替換整個分類器。
+        # 這是模型中唯一在客戶端訓練期間更新其參數的部分。
+        
+        # Get the input feature dimension for the new classifier from the original model's last layer.
+        feature_dim = backbone.classifier[0].in_features 
+        self.classifier = nn.Linear(feature_dim, num_classes)
+        print(f"New classifier initialized with {feature_dim} input features and {num_classes} output classes.")
+
+    def forward(self, x):
+        """
+        Performs a forward pass through the network, producing classification logits.
+
+        Parameters:
+            x (torch.Tensor): Input image tensor.
+
+        Returns:
+            torch.Tensor: The classification logits from the model.
+        """
+        # Pass input through the frozen feature extractor (inference mode for these layers)
+        # 即使模型在訓練模式，這些凍結層也應行為如評估模式
+        self.feature_extractor.eval() 
+        with torch.no_grad(): # Ensure no gradients are computed for the frozen backbone
+            x = self.feature_extractor(x)
+        
+        # Apply Adaptive Average Pooling to ensure 1x1 spatial dimensions before flattening.
+        # This makes the output feature vector size independent of the input spatial dimensions
+        # and prepares it for the linear classification layer.
+        # 應用自適應平均池化以確保在展平之前具有 1x1 的空間維度。
+        # 這使得輸出特徵向量的大小與輸入空間維度無關，
+        # 並為線性分類層做好準備。
+        x = F.adaptive_avg_pool2d(x, (1, 1)) 
+        
+        # Flatten the tensor from (batch_size, channels, 1, 1) to (batch_size, channels).
+        # 展平張量，從 (batch_size, channels, 1, 1) 展平為 (batch_size, channels)。
+        x = x.view(x.size(0), -1)
+        
+        # Pass the flattened features through the trainable classification layer
+        # 將展平後的特徵通過可訓練的分類層
+        x = self.classifier(x)
+        return x
+
+    def get_features(self, x):
+        """
+        Extracts features (embeddings) from the input before the final classification layer.
+        This method is highly useful in prototype-based federated learning (like FedProto)
+        where class prototypes (centroids) are computed from these feature embeddings
+        to mitigate issues like non-IID data and class imbalance.
+
+        Parameters:
+            x (torch.Tensor): Input image tensor.
+
+        Returns:
+            torch.Tensor: The feature embeddings extracted from the input images.
+        """
+        # Ensure the feature extractor is in evaluation mode for consistent feature extraction
+        # (e.g., BatchNorm layers use global mean/variance)
+        self.feature_extractor.eval() 
+        with torch.no_grad(): # No gradients needed for feature extraction
+            x = self.feature_extractor(x)
         
         # Apply AdaptiveAvgPool2d here as well for consistency in feature extraction.
         # 在此處也應用 AdaptiveAvgPool2d 以保持特徵提取的一致性。

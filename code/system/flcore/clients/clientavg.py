@@ -39,27 +39,11 @@ class clientAVG(Client):
             )
 
         start_time = time.time()
-
-        def split_and_map(input_number, total_range, parts=4):
-            # Compute thresholds using split_number logic
-            part_size = total_range / parts
-            thresholds = [round(part_size * i) for i in range(1, parts + 1)]
-
-            # Map input_number to a value based on thresholds
-            for i, threshold in enumerate(thresholds):
-                if input_number <= threshold:
-                    return i
-            return parts - 1  # Return the last index if number exceeds all thresholds
         
         if self.dynamic > 0: # dynamic training
-            #print(type(self.dynamic))
-            #print(self.dynamic)
-            current_round = self.train_time_cost['num_rounds']
-            total_rounds = self.global_rounds 
-            current_index = split_and_map(current_round, total_rounds)
             local_epoch = [10,5,3,1]
-            max_local_steps = local_epoch[current_index]
-            #print("current local epoch:", max_local_steps)
+            max_local_steps = local_epoch[self.current_index]
+            #print("current local epoch:", max_local_steps) 
         else:
             max_local_steps = self.local_epochs  
             #print("current local epoch:", max_local_steps)          
@@ -67,6 +51,8 @@ class clientAVG(Client):
         #max_local_steps = self.local_epochs
         if self.train_slow:
             max_local_steps = np.random.randint(1, max_local_steps // 2)
+
+        #print("current local epoch:", max_local_steps)
 
         for step in range(max_local_steps):
             for i, (x, y) in enumerate(trainloader):

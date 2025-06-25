@@ -31,7 +31,9 @@ from flcore.servers.serverARFedAvg import AdaptiveRobustFedAvg
 from flcore.servers.serverARFedAvgR import AdaptiveRobustFedAvgR
 
 from flcore.trainmodel.models import *
-
+from flcore.trainmodel.pretrained_model import *
+from flcore.trainmodel.ghostnetV2 import FedProtoCINIC10_GhostNetV2, GhostNetV2
+from flcore.trainmodel.ghostnetV3 import FedProtoCINIC10_GhostNetV3
 from flcore.trainmodel.bilstm import *
 from flcore.trainmodel.resnet import *
 from flcore.trainmodel.resnetCifar100 import *
@@ -82,12 +84,24 @@ def run(args):
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_100_alpha01" in args.dataset:
                 #args.model = FedProtoCifar100().to(args.device)
+                #args.model = FedProtoCIFAR100_V3().to(args.device)
+                #args.model = FedProtoCifar100_MobileNetV3_Small().to(args.device) #can't train well, give up
+                #args.model = FedProtoCIFAR100_MobileNetV2().to(args.device)
+                #args.model = FedProtoCifar100_MobileNetV2_new().to(args.device)
+                #args.model = FedProtoCIFAR100_EfficientNetV2S().to(args.device) #cost too much time
+                #args.model = FedProtoCIFAR100_SqueezeNet().to(args.device) 
+                #args.model = FedProtoCifar100_SqueezeNet_new().to(args.device)
+                #args.model = FedProtoCIFAR100_ShuffleNetV2().to(args.device) #can't train well, give up
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "CINIC10_100_alpha01" in args.dataset:
-                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
                 #args.model = FedProtoCINIC10().to(args.device)
                 #args.model = FedProtoCINIC10_V2(num_classes=args.num_classes, architecture='mobilenetv2')
                 #args.model = args.model.to(args.device)
+                #args.model = FedProtoCINIC10_V3().to(args.device)
+                #args.model = FedProtoCINIC10_ShuffleNetV2().to(args.device)
+                #args.model = FedProtoCINIC10_EfficientNetV2S().to(args.device)
+                args.model = FedProtoCINIC10_SqueezeNet().to(args.device)
             elif "omniglot" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=33856).to(args.device)
                 # args.model = CifarNet(num_classes=args.num_classes).to(args.device)

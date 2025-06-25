@@ -42,6 +42,8 @@ class Server(object):
         self.top_cnt = 20  # 最高計數（用於收斂檢查）
         self.auto_break = args.auto_break  # 是否自動終止
 
+        self.time_cost_list = []  # 時間成本列表
+
         self.clients = []  # 客戶端列表
         self.selected_clients = []  # 選中的客戶端
         self.train_slow_clients = []  # 訓練緩慢的客戶端
@@ -463,13 +465,7 @@ class Server(object):
         auc_df = pd.DataFrame(self.auc_data)
         f1_df = pd.DataFrame(self.f1_data)
         auc_pr_df = pd.DataFrame(self.auc_pr_data)
-
-        # remove the even rows
-        acc_df = acc_df.iloc[::2]
-        loss_df = loss_df.iloc[::2]
-        auc_df = auc_df.iloc[::2]
-        f1_df = f1_df.iloc[::2]
-        auc_pr_df = auc_pr_df.iloc[::2]
+        time_df = pd.DataFrame(self.time_cost_list)
 
         name = f"{self.algorithm}_{self.select_clients_algorithm}_{self.poisoned_ratio*self.num_clients}_{self.random_seed}"
         acc_df.columns = [name]
@@ -477,16 +473,20 @@ class Server(object):
         auc_df.columns = [name]
         f1_df.columns = [name]
         auc_pr_df.columns = [name]
+        time_df.columns = [name]
 
         auc_dir = f"../results/{self.num_clients}/auc"
         f1_dir = f"../results/{self.num_clients}/f1"
         auc_pr_dir = f"../results/{self.num_clients}/auc_pr"
+        time_cost_dir = f"../results/{self.num_clients}/time_cost"
         os.makedirs(auc_dir, exist_ok=True)
         os.makedirs(f1_dir, exist_ok=True)
         os.makedirs(auc_pr_dir, exist_ok=True)
+        os.makedirs(time_cost_dir, exist_ok=True)
         auc_df.to_csv(os.path.join(auc_dir, f"{name}.csv"), index=False)
         f1_df.to_csv(os.path.join(f1_dir, f"{name}.csv"), index=False)
         auc_pr_df.to_csv(os.path.join(auc_pr_dir, f"{name}.csv"), index=False)
+        time_df.to_csv(os.path.join(time_cost_dir, f"{name}.csv"), index=False)
 
         acc_dir = f"../results/{self.num_clients}/accuracy"
         loss_dir = f"../results/{self.num_clients}/loss"
@@ -494,6 +494,17 @@ class Server(object):
         os.makedirs(loss_dir, exist_ok=True)
         acc_df.to_csv(os.path.join(acc_dir, f"{name}.csv"), index=False)
         loss_df.to_csv(os.path.join(loss_dir, f"{name}.csv"), index=False)
+
+        # 繪製並儲存時間圖表
+        plt.figure()
+        plt.plot(time_df, label='Time Cost', color='red')
+        plt.title('Time Cost Over Epochs')
+        plt.xlabel('Epochs')
+        plt.ylabel('Time Cost (s)')
+        plt.legend()
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.savefig(os.path.join(time_cost_dir, f"{name}_time_cost.png"))
+        plt.close()
 
         # 繪製並儲存 AUC 圖表
         plt.figure()

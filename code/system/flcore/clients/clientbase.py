@@ -38,7 +38,9 @@ class Client(object):
         self.save_folder_name = args.save_folder_name
 
         self.dynamic = args.dynamic_training
-
+        
+        self.current_index = 0
+        
         # CelebA 有 40 個屬性，其他資料集使用 args.num_classes
         self.num_classes = args.num_classes if self.dataset.lower() != 'celeba' else 40
         self.train_samples = train_samples
@@ -398,3 +400,6 @@ class Client(object):
         if item_path is None:
             item_path = self.save_folder_name
         return torch.load(os.path.join(item_path, "client_" + str(self.id) + "_" + item_name + ".pt"))
+    
+    def set_current_index(self, index):
+        self.current_index = index

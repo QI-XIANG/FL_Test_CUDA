@@ -46,6 +46,8 @@ class FedAvg(Server):
         # 判斷是否為多標籤資料集（僅 CelebA 為多標籤）
         self.is_multilabel = (args.dataset.lower() == 'celeba')
 
+        self.dynamic = args.dynamic_training
+
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
@@ -153,7 +155,26 @@ class FedAvg(Server):
 
                 print(f"history acc: {self.acc_his}")
 
+                def split_and_map(input_number, total_range, parts=4):
+                    # Compute thresholds using split_number logic
+                    part_size = total_range / parts
+                    thresholds = [round(part_size * i) for i in range(1, parts + 1)]
+
+                    # Map input_number to a value based on thresholds
+                    for i, threshold in enumerate(thresholds):
+                        if input_number <= threshold:
+                            return i
+                    return parts - 1  # Return the last index if number exceeds all thresholds
+
+                if self.dynamic > 0:
+                    current_index = split_and_map(i, self.global_rounds)
+                    #print(f"current index: {current_index}")
+                else:
+                    current_index = 0
+
                 for client in self.selected_clients:
+                    client.set_current_index(current_index)
+                    #print(f"client: {client.id}, current_index: {current_index}")
                     client.train()
                     if self.select_clients_algorithm in ["RSVD", "RSVDUCB", "RSVDUCBT", "RSVDUCBTE"]:
                         gradients = client.get_training_gradients()
@@ -207,9 +228,9 @@ class FedAvg(Server):
                         acc, train_loss, auc, f1, auc_pr_score = self.evaluate()
                     
                     self.global_accuracy_history.append(acc)
-                    self.acc_data.append(acc)
-                    self.loss_data.append(train_loss)
-                    self.auc_data.append(auc)
+                    #self.acc_data.append(acc)
+                    #self.loss_data.append(train_loss)
+                    #self.auc_data.append(auc)
                     mlflow.log_metric("global accuracy", acc, step=i)
                     mlflow.log_metric("train_loss", train_loss, step=i)
 
@@ -218,6 +239,8 @@ class FedAvg(Server):
 
                 self.Budget.append(time.time() - s_t)
                 print('-'*25, 'Time Cost', '-'*25, self.Budget[-1])
+
+                self.time_cost_list.append(self.Budget[-1])
 
                 if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                     break
