@@ -1,3 +1,4 @@
+import shutil
 import torch
 import os
 import numpy as np
@@ -41,6 +42,8 @@ class Server(object):
         self.save_folder_name = args.save_folder_name  # 儲存資料夾名稱
         self.top_cnt = 20  # 最高計數（用於收斂檢查）
         self.auto_break = args.auto_break  # 是否自動終止
+
+        self.expID = args.expID # 當前實驗編號
 
         self.time_cost_list = []  # 時間成本列表
 
@@ -96,7 +99,7 @@ class Server(object):
         # 判斷是否為多標籤資料集
         self.is_multilabel = (args.dataset.lower() == 'celeba')
 
-    def select_poisoned_client(self):
+    def select_poisoned_client_old(self): #for traditional label flipping attack purpose
         """選擇中毒客戶端，動態適配不同資料集"""
         np.random.seed(self.random_seed)
         label_one_clients = []
@@ -116,12 +119,36 @@ class Server(object):
                         break
         
         # 確保中毒客戶端數不超過可用數量
-        num_poisoned_clients = min(int(self.num_clients * self.poisoned_ratio), len(label_one_clients))
+        num_poisoned_clients = int(self.num_clients * self.poisoned_ratio)
         if num_poisoned_clients == 0:  # 若無符合條件的客戶端，隨機選擇
             num_poisoned_clients = min(int(self.num_clients * self.poisoned_ratio), self.num_clients)
             poisoned_clients = list(np.random.choice(range(self.num_clients), num_poisoned_clients, replace=False))
         else:
             poisoned_clients = list(np.random.choice(label_one_clients, num_poisoned_clients, replace=False))
+        return poisoned_clients
+    
+    def select_poisoned_client(self): #for adaptive attack purpose
+        """
+        選擇中毒客戶端，不考慮特定目標標籤。
+        直接從所有客戶端中按比例隨機選擇。
+        """
+        np.random.seed(self.random_seed) # Set seed for reproducibility
+
+        # Calculate the desired number of poisoned clients based on the ratio
+        desired_num_poisoned_clients = int(self.num_clients * self.poisoned_ratio)
+        
+        # Ensure the number of poisoned clients doesn't exceed the total number of clients
+        actual_num_poisoned_clients = min(desired_num_poisoned_clients, self.num_clients)
+        
+        # Randomly select client IDs from the entire range of clients
+        # np.random.choice(total_clients_pool, number_to_select, replace=False)
+        poisoned_clients = list(np.random.choice(range(self.num_clients), actual_num_poisoned_clients, replace=False))
+            
+        print(f"Total clients: {self.num_clients}")
+        print(f"Desired poisoning ratio: {self.poisoned_ratio*100:.0f}%")
+        print(f"Desired number of poisoned clients: {desired_num_poisoned_clients}")
+        print(f"Actual poisoned clients selected: {len(poisoned_clients)}")
+
         return poisoned_clients
 
     def get_test_data(self):
@@ -444,7 +471,7 @@ class Server(object):
 
     def save_results(self):
         """儲存訓練結果"""
-        algo = self.dataset + "_" + self.algorithm
+        algo = self.dataset + "_" + self.algorithm 
         result_path = "../results/"
         if not os.path.exists(result_path):
             os.makedirs(result_path)
@@ -459,6 +486,11 @@ class Server(object):
                 hf.create_dataset('rs_test_f1', data=self.rs_test_f1)
                 hf.create_dataset('rs_test_auc_pr', data=self.rs_test_auc_pr)
                 hf.create_dataset('rs_train_loss', data=self.rs_train_loss)
+            
+            h5_dir = f"../results/{self.num_clients}_{self.expID}/h5"
+            #move the h5 file to ../results/{self.num_clients}_{self.expID}/h5
+            os.makedirs(h5_dir, exist_ok=True)
+            shutil.move(file_path, f"../results/{self.num_clients}_{self.expID}/h5")
 
         acc_df = pd.DataFrame(self.acc_data)
         loss_df = pd.DataFrame(self.loss_data)
@@ -475,10 +507,10 @@ class Server(object):
         auc_pr_df.columns = [name]
         time_df.columns = [name]
 
-        auc_dir = f"../results/{self.num_clients}/auc"
-        f1_dir = f"../results/{self.num_clients}/f1"
-        auc_pr_dir = f"../results/{self.num_clients}/auc_pr"
-        time_cost_dir = f"../results/{self.num_clients}/time_cost"
+        auc_dir = f"../results/{self.num_clients}_{self.expID}/auc"
+        f1_dir = f"../results/{self.num_clients}_{self.expID}/f1"
+        auc_pr_dir = f"../results/{self.num_clients}_{self.expID}/auc_pr"
+        time_cost_dir = f"../results/{self.num_clients}_{self.expID}/time_cost"
         os.makedirs(auc_dir, exist_ok=True)
         os.makedirs(f1_dir, exist_ok=True)
         os.makedirs(auc_pr_dir, exist_ok=True)
@@ -488,8 +520,8 @@ class Server(object):
         auc_pr_df.to_csv(os.path.join(auc_pr_dir, f"{name}.csv"), index=False)
         time_df.to_csv(os.path.join(time_cost_dir, f"{name}.csv"), index=False)
 
-        acc_dir = f"../results/{self.num_clients}/accuracy"
-        loss_dir = f"../results/{self.num_clients}/loss"
+        acc_dir = f"../results/{self.num_clients}_{self.expID}/accuracy"
+        loss_dir = f"../results/{self.num_clients}_{self.expID}/loss"
         os.makedirs(acc_dir, exist_ok=True)
         os.makedirs(loss_dir, exist_ok=True)
         acc_df.to_csv(os.path.join(acc_dir, f"{name}.csv"), index=False)

@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-from timm.models.registry import register_model
+from timm.models import register_model
 
 def _make_divisible(v, divisor, min_value=None):
     """

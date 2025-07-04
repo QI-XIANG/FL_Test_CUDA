@@ -29,6 +29,8 @@ from flcore.servers.serverfedadaptivetrimmedbulyanRRRR import RobustFedBulyanRRR
 from flcore.servers.serveravg_lstm import FedAvgLSTM
 from flcore.servers.serverARFedAvg import AdaptiveRobustFedAvg
 from flcore.servers.serverARFedAvgR import AdaptiveRobustFedAvgR
+from flcore.servers.serverFedGuard import FedGuard
+from flcore.servers.serverRSVDUCBTE import FedRSVDUCBTE
 
 from flcore.trainmodel.models import *
 from flcore.trainmodel.pretrained_model import *
@@ -89,6 +91,7 @@ def run(args):
                 #args.model = FedProtoCIFAR100_MobileNetV2().to(args.device)
                 #args.model = FedProtoCifar100_MobileNetV2_new().to(args.device)
                 #args.model = FedProtoCIFAR100_EfficientNetV2S().to(args.device) #cost too much time
+                #args.model = FedProtoCifar100_MNASNet().to(args.device)
                 #args.model = FedProtoCIFAR100_SqueezeNet().to(args.device) 
                 #args.model = FedProtoCifar100_SqueezeNet_new().to(args.device)
                 #args.model = FedProtoCIFAR100_ShuffleNetV2().to(args.device) #can't train well, give up
@@ -142,6 +145,12 @@ def run(args):
         
         elif args.algorithm == "FedUCBN":
             server = FedUCBN(args, i)
+        
+        elif args.algorithm == "FedGuard":
+            server = FedGuard(args, i)
+
+        elif args.algorithm == "FedRSVDUCBTE":
+            server = FedRSVDUCBTE(args, i)
 
         elif args.algorithm == "FedBulyan":
             server = FedBulyan(args, i)
@@ -193,7 +202,7 @@ def run(args):
     
 
     # Global average
-    average_data(dataset=args.dataset, algorithm=args.algorithm, goal=args.goal, times=args.times)
+    average_data(dataset=args.dataset, algorithm=args.algorithm, goal=args.goal, times=args.times, num_clients=args.num_clients, expID=args.expID)
 
     print("All done!")
 
@@ -263,7 +272,11 @@ if __name__ == "__main__":
     parser.add_argument('-wo', "--weight_option", type=str, default = "same")
     parser.add_argument('-rs', "--random_seed", type=int, default=309)
 
-
+    # attack type
+    parser.add_argument('-at', "--attack_type", type=str, default = "label_flipping")
+    # experiment id
+    parser.add_argument('-eid', "--expID", type=str, default = "test")
+    
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device_id
@@ -275,6 +288,7 @@ if __name__ == "__main__":
     print("=" * 50)
 
     print("Algorithm: {}".format(args.algorithm))
+    print("Default Attack Type: {}".format(args.attack_type))
     print("Local batch size: {}".format(args.batch_size))
     print("Local steps: {}".format(args.local_epochs))
     print("Local learing rate: {}".format(args.local_learning_rate))

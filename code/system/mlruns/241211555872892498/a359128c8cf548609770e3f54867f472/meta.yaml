@@ -1,0 +1,15 @@
+artifact_uri: file:///D:/FederatedLearning/fl_practice/Federated_Learning_Practice/code/system/mlruns/241211555872892498/a359128c8cf548609770e3f54867f472/artifacts
+end_time: 1750958738428
+entry_point_name: ''
+experiment_id: '241211555872892498'
+lifecycle_stage: active
+run_id: a359128c8cf548609770e3f54867f472
+run_name: noniid_wbn_0.0_same
+run_uuid: a359128c8cf548609770e3f54867f472
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1750955293704
+status: 3
+tags: []
+user_id: dslab

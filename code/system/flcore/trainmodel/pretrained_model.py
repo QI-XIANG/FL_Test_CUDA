@@ -1351,3 +1351,120 @@ class FedProtoCifar100_SqueezeNet_new(nn.Module):
         return x
 
 #---------------------------------------------------------------------------------------------------
+
+from torchvision.models import efficientnet_b0, EfficientNet_B0_Weights
+
+class FedProtoCifar100_EfficientNet_B0(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100_EfficientNet_B0, self).__init__()
+        # Utilize a pretrained EfficientNet_B0 backbone for feature extraction
+        efficientnet = efficientnet_b0(weights=EfficientNet_B0_Weights.IMAGENET1K_V1)
+
+        # The feature extractor is the 'features' module of EfficientNet_B0
+        self.feature_extractor = efficientnet.features
+        
+        # The EfficientNet classifier typically starts with a `nn.Linear` layer
+        # after an adaptive average pooling and flatten operation.
+        # We need to get the `in_features` of this initial linear layer.
+        # For EfficientNet_B0, the classifier is a Sequential module, and the
+        # first element (at index 1) is typically the Linear layer after dropout.
+        # The in_features for EfficientNet_B0's classifier[1] is 1280.
+        self.fc = nn.Linear(efficientnet.classifier[1].in_features, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        # EfficientNet models typically use AdaptiveAvgPool2d and flatten
+        # before the final classification layer within their own forward pass.
+        # We need to replicate this behavior for our custom head.
+        x = nn.functional.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1)  # Flatten the tensor
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------
+
+from torchvision.models import mnasnet1_0, MNASNet1_0_Weights
+
+class FedProtoCifar100_MNASNet(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100_MNASNet, self).__init__()
+        # Utilize a pretrained MNASNet backbone for feature extraction
+        mnasnet = mnasnet1_0(weights=MNASNet1_0_Weights.IMAGENET1K_V1)
+
+        # For MNASNet, the main convolutional backbone, including the
+        # global average pooling, is typically contained within the 'layers' attribute.
+        # The 'classifier' module then follows.
+        self.feature_extractor = mnasnet.layers
+
+        # The input features for the final classification layer come from the
+        # output of the 'layers' sequence. The original MNASNet's classifier[1]
+        # is the Linear layer. We can get its in_features directly.
+        # This part should be correct if mnasnet.classifier[1] is indeed the Linear layer.
+        self.fc = nn.Linear(mnasnet.classifier[1].in_features, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        # The 'layers' module in MNASNet usually includes the final
+        # AdaptiveAvgPool2d, so the output is already pooled.
+        # We just need to flatten it before passing to the FC layer.
+        x = torch.flatten(x, 1)  # Flatten the tensor after the feature extraction
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------
+
+import torch
+import torch.nn as nn
+from torchvision.models import mnasnet1_0, MNASNet1_0_Weights
+
+class FedProtoCifar100_MNASNet_new(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100_MNASNet_new, self).__init__()
+        
+        # Load the pretrained MNASNet model
+        mnasnet = mnasnet1_0(weights=MNASNet1_0_Weights.IMAGENET1K_V1)
+
+        # --- Modify the first convolutional layer ---
+        # MNASNet's first layer is typically mnasnet.layers[0]
+        original_first_conv = mnasnet.layers[0]
+
+        # For CIFAR-100 (32x32, 3 channels):
+        # We need to change the stride of the first convolutional layer
+        # to (1,1) to prevent rapid downsampling.
+        # Original: Conv2d(3, 32, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+        new_first_conv = nn.Conv2d(
+            in_channels=original_first_conv.in_channels, # Keep 3 channels for CIFAR-100
+            out_channels=original_first_conv.out_channels,
+            kernel_size=original_first_conv.kernel_size,
+            stride=(1, 1), # <-- Change stride to 1x1
+            padding=original_first_conv.padding,
+            bias=original_first_conv.bias
+        )
+        
+        # Optionally, transfer weights for the common part of the kernel (3 channels)
+        # This is a common practice to retain some pre-trained knowledge
+        new_first_conv.weight.data[:, :3, :, :] = original_first_conv.weight.data[:, :3, :, :]
+        if original_first_conv.bias is not None:
+            new_first_conv.bias.data = original_first_conv.bias.data
+
+        # Replace the original first layer with our modified one
+        mnasnet.layers[0] = new_first_conv
+
+        # Assign the modified layers as the feature extractor
+        self.feature_extractor = mnasnet.layers
+
+        # The final classification layer remains the same, as its input features
+        # depend on the output of the 'layers' sequence, which has been adjusted.
+        self.fc = nn.Linear(mnasnet.classifier[1].in_features, num_classes)
+
+        # Note: You still need to apply ImageNet normalization in your DataLoader
+        # even if you don't resize, as the pre-trained weights expect this.
+
+    def forward(self, x):
+        # Assuming input 'x' is already normalized by the DataLoader
+        x = self.feature_extractor(x)
+        x = torch.flatten(x, 1)  # Flatten the tensor after the feature extraction
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------

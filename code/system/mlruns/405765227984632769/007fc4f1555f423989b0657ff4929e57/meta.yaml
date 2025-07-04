@@ -1,0 +1,15 @@
+artifact_uri: file:///home/dslab/qixiang/FL_Test_Env_CUDA/code/system/mlruns/405765227984632769/007fc4f1555f423989b0657ff4929e57/artifacts
+end_time: 1751583308800
+entry_point_name: ''
+experiment_id: '405765227984632769'
+lifecycle_stage: active
+run_id: 007fc4f1555f423989b0657ff4929e57
+run_name: noniid_wbn_40.0_same
+run_uuid: 007fc4f1555f423989b0657ff4929e57
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1751582732629
+status: 4
+tags: []
+user_id: dslab

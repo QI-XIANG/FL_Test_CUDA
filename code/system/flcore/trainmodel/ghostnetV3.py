@@ -12,7 +12,7 @@ import torch.nn.functional as F
 import math
 
 from typing import Optional, List, Tuple
-from timm.models.registry import register_model
+from timm.models import register_model
 
 #__all__ = ['ghost_net']
 

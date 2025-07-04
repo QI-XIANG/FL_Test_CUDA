@@ -40,7 +40,14 @@ class Client(object):
         self.dynamic = args.dynamic_training
         
         self.current_index = 0
-        
+
+        self.label_datasize = [0] * args.num_classes
+        self.finishCount = True
+
+        self.attack_type = args.attack_type
+        self.static_target = {}
+        self.static_flag = 1
+
         # CelebA 有 40 個屬性，其他資料集使用 args.num_classes
         self.num_classes = args.num_classes if self.dataset.lower() != 'celeba' else 40
         self.train_samples = train_samples
@@ -49,7 +56,7 @@ class Client(object):
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.is_multilabel = (self.dataset.lower() == 'celeba')  # 添加多標籤標誌
-        self.data_augmentation = True
+        self.data_augmentation = False # 是否使用數據增強
 
         # 檢查是否有 BatchNorm 層（這裡使用 GroupNorm，無需調整）
         self.has_BatchNorm = False
@@ -145,9 +152,20 @@ class Client(object):
         if batch_size is None:
             batch_size = self.batch_size
         train_data = read_client_data(self.dataset, self.id, is_train=True)
+
+        #count label in train data
+        if self.finishCount:
+            for img, label in train_data:
+                self.label_datasize[label] += 1
+            self.finishCount = False
+            #print("Client ", self.id, " finish count label")
+        
+        if self.finishCount == False:
+            #print("Client ", self.id, " already finish count label")
+            pass
         
         # 毒化邏輯
-        if self.poisoned:
+        if self.poisoned and self.attack_type == 'label_flipping':
             poisoned_data = []
             for img, label in train_data:
                 if self.is_multilabel:
@@ -168,6 +186,64 @@ class Client(object):
                     elif label == 9:
                         label = torch.tensor(1)
                     poisoned_data.append((img, label))
+            train_data = poisoned_data
+
+        # 毒化邏輯
+        if self.poisoned and self.attack_type == 'adaptive_label_flipping':
+            poisoned_data = []
+            for img, label in train_data:
+                if self.is_multilabel:
+                    # CelebA 的毒化邏輯：隨機翻轉部分屬性標籤
+                    labels = label.clone()  # 假設標籤為 (40,) 的張量
+                    # 隨機選擇 10% 的屬性進行翻轉
+                    flip_indices = np.random.choice(self.num_classes, int(self.num_classes * 0.1), replace=False)
+                    for idx in flip_indices:
+                        labels[idx] = 1 - labels[idx]  # 0->1 或 1->0
+                    poisoned_data.append((img, labels))
+                else:
+                    # find the less represented class with 10% label
+                    attack_label_count = max(1, int(len(self.label_datasize) * 0.1))
+                    # get attack label index base on attack_label_count from self.label_datasize
+                    label_counts_with_indices = [(i, self.label_datasize[i]) for i in range(self.num_classes)]
+                    # Sort by count (x[1]) in ascending order
+                    sorted_labels_by_count = sorted(label_counts_with_indices, key=lambda x: x[1])
+                    # Extract only the label indices of the least represented classes
+                    attack_label_index = [item[0] for item in sorted_labels_by_count[:attack_label_count]]
+
+                    #print("Client ", self.id, " ,attack_label_index: ", attack_label_index)
+                    
+                    for label in attack_label_index:
+                        if self.static_flag <= 0:
+                            # assign random label other than attack_label
+                            random_label = random.randint(0, self.num_classes - 1)
+                            #convert label to int
+                            label_t = int(label)
+                            while random_label == label_t:
+                                random_label = random.randint(0, self.num_classes - 1)
+                            try:
+                                label = torch.tensor(random_label)
+                            except:
+                                pass
+                        elif self.static_flag >= 1:
+                            if len(self.static_target) < attack_label_count:
+                                # assign random label other than attack_label
+                                random_label = random.randint(0, self.num_classes - 1)
+                                #convert label to int
+                                label_t = int(label)
+                                while random_label == label_t:
+                                    random_label = random.randint(0, self.num_classes - 1)
+                                self.static_target[label_t] = random_label
+                            try:
+                                label = torch.tensor(self.static_target[label_t])
+                                #print("Client ", self.id, "original label:", label_t,  " ,attack label: ", self.static_target[label_t])
+                            except:
+                                pass
+                    else:
+                        #print("Client ", self.id, "original")
+                        label = torch.tensor(label)  # keep the original label      
+                    
+                    poisoned_data.append((img, label))
+            
             train_data = poisoned_data
 
         augmented_train_data = []
