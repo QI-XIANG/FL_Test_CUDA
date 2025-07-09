@@ -370,6 +370,75 @@ class FedProtoCINIC10_SqueezeNet(nn.Module):
         # 將特徵展平為 (batch_size, embedding_dim)
         x = x.view(x.size(0), -1)
         return x
+#---------------------------------------------------------------------------------------------------
+
+from torchvision.models import mobilenet_v2, MobileNet_V2_Weights
+
+class FedProtoCINIC10_MobileNetV2_new(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FedProtoCINIC10_MobileNetV2_new, self).__init__()
+        # Utilize a pretrained MobileNetV2 backbone for feature extraction
+        mobilenet = mobilenet_v2(weights=MobileNet_V2_Weights.IMAGENET1K_V1)
+
+        # Remove the final classification layer.
+        # MobileNetV2's feature extraction part is typically everything before the 'classifier' module.
+        self.feature_extractor = mobilenet.features
+        
+        # The last layer in mobilenet.features (features.18) outputs 1280 channels.
+        # This will be the input to our new classification head.
+        self.fc = nn.Linear(mobilenet.last_channel, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        # MobileNetV2's feature extractor output needs to be flattened.
+        # It typically ends with a 1x1 average pooling, so we can use adaptive average pooling
+        # before flattening for consistency with how MobileNetV2 is often used,
+        # or simply flatten the global average pooled output.
+        # The original MobileNetV2 applies an adaptive average pool as part of its forward pass
+        # before the classifier. We'll replicate that.
+        x = nn.functional.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1) # Flatten the tensor
+        x = self.fc(x)
+        return x
+
+#---------------------------------------------------------------------------------------------------
+
+from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
+
+mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
+
+class FedProtoCINIC10_MobileNetV3_Small(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FedProtoCINIC10_MobileNetV3_Small, self).__init__()
+        # Utilize a pretrained MobileNetV3-Small backbone for feature extraction
+        mobilenet_v3 = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1)
+
+        # MobileNetV3 models have a 'features' and a 'classifier' module.
+        # We take all layers up to the 'avgpool' layer within the features,
+        # and then typically the 'classifier' module starts with a 1x1 conv or a linear layer.
+        # For feature extraction, we want to capture the output right before the final classification head.
+        # MobileNetV3's classifier usually starts with a Conv2d layer followed by pooling and then Linear.
+        # The 'features' part of MobileNetV3-Small culminates in a layer that outputs 576 channels.
+        self.feature_extractor = mobilenet_v3.features
+    
+        # The MobileNetV3 models have a `_forward_impl` method that includes and 'avgpool' layer.
+        # The 'avgpool' layer is typically followed by a 1x1 convolutional layer and a global average pooling layer.
+        # The output of the 1x1 convolutional layer is typically 576 channels.
+        # This output will be the input to our new classification head.
+        self.fc = nn.Linear(mobilenet_v3.classifier[0].in_channels, num_classes) # Access the in_channels of the first layer in classifier
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        # MobileNetV3's feature extractor output needs to be flattened.
+        # It typically ends with a 1x1 average pooling, so we can use adaptive average pooling
+        # before flattening for consistency with how MobileNetV3 is often used,
+        # or simply flatten the global average pooled output.
+        # The original MobileNetV3 applies an adaptive average pool as part of its forward pass
+        # before the classifier. We'll replicate that.
+        x = nn.functional.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1) # Flatten the tensor
+        x = self.fc(x)
+        return x
 
 #---------------------------------------------------------------------------------------------------
 

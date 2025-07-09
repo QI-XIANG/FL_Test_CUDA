@@ -104,7 +104,11 @@ def run(args):
                 #args.model = FedProtoCINIC10_V3().to(args.device)
                 #args.model = FedProtoCINIC10_ShuffleNetV2().to(args.device)
                 #args.model = FedProtoCINIC10_EfficientNetV2S().to(args.device)
-                args.model = FedProtoCINIC10_SqueezeNet().to(args.device)
+                args.model = FedProtoCINIC10_MobileNetV2_new().to(args.device)
+                #args.model = FedProtoCINIC10_MobileNetV3_Small().to(args.device)
+                #args.model = FedProtoCINIC10_SqueezeNet().to(args.device)
+            elif "CINIC10_300_alpha01" in args.dataset:
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "omniglot" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=33856).to(args.device)
                 # args.model = CifarNet(num_classes=args.num_classes).to(args.device)
