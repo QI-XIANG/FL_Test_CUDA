@@ -56,7 +56,7 @@ class Client(object):
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.is_multilabel = (self.dataset.lower() == 'celeba')  # 添加多標籤標誌
-        self.data_augmentation = False # 是否使用數據增強
+        self.data_augmentation = True # 是否使用數據增強
 
         # 檢查是否有 BatchNorm 層（這裡使用 GroupNorm，無需調整）
         self.has_BatchNorm = False
@@ -88,6 +88,9 @@ class Client(object):
         )
         self.learning_rate_decay = args.learning_rate_decay
         self.poisoned = kwargs['poisoned']
+
+        self.testDataLoader = self.load_test_data()
+        self.trainDataLoader = self.load_train_data()
 
     def _apply_data_augmentation_cifar100(self, images):
         """
@@ -323,7 +326,8 @@ class Client(object):
                 - 多標籤 (CelebA): (test_acc, test_num, auc, label_acc, f1, auc_pr)
                 - 單標籤: (test_acc, test_num, auc, f1, auc_pr)
         """
-        testloaderfull = self.load_test_data()
+        #testloaderfull = self.load_test_data()
+        testloaderfull = self.testDataLoader
         self.model.eval()
 
         test_acc = 0
@@ -438,7 +442,8 @@ class Client(object):
         返回：
             tuple: (總損失, 訓練樣本數)
         """
-        trainloader = self.load_train_data()
+        #trainloader = self.load_train_data()
+        trainloader = self.trainDataLoader
         self.model.eval()
 
         train_num = 0

@@ -201,3 +201,46 @@ class MemReporter():
         self.collect_tensor()
         self.get_stats()
         self.print_stats(verbose, target_device=device)
+
+    def report_image(self, path: str = 'mem_report.png', width: int = 1000, font_size: int = 14, wrap: int = 100) -> None:
+        """
+        Save the memory report as an image.
+
+        Args:
+            path (str): File path to save the image.
+            width (int): Width of the image in pixels.
+            font_size (int): Font size for the text.
+            wrap (int): Max characters per line before wrapping.
+        """
+        import io
+        import textwrap
+        from contextlib import redirect_stdout
+        from PIL import Image, ImageDraw, ImageFont
+
+        # Capture output of report()
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            self.report()
+        text = buf.getvalue()
+
+        # Wrap lines
+        wrapped_lines = []
+        for line in text.split('\n'):
+            wrapped_lines += textwrap.wrap(line, width=wrap) or ['']
+
+        # Font and line settings
+        try:
+            font = ImageFont.truetype("DejaVuSansMono.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+        line_height = font_size + 4
+        height = line_height * len(wrapped_lines) + 20
+
+        # Create image
+        img = Image.new("RGB", (width, height), "white")
+        draw = ImageDraw.Draw(img)
+
+        for i, line in enumerate(wrapped_lines):
+            draw.text((10, 10 + i * line_height), line, font=font, fill="black")
+
+        img.save(path)

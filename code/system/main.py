@@ -85,7 +85,7 @@ def run(args):
             elif "Cifar10_20" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_100_alpha01" in args.dataset:
-                #args.model = FedProtoCifar100().to(args.device)
+                args.model = FedProtoCifar100().to(args.device)
                 #args.model = FedProtoCIFAR100_V3().to(args.device)
                 #args.model = FedProtoCifar100_MobileNetV3_Small().to(args.device) #can't train well, give up
                 #args.model = FedProtoCIFAR100_MobileNetV2().to(args.device)
@@ -95,16 +95,24 @@ def run(args):
                 #args.model = FedProtoCIFAR100_SqueezeNet().to(args.device) 
                 #args.model = FedProtoCifar100_SqueezeNet_new().to(args.device)
                 #args.model = FedProtoCIFAR100_ShuffleNetV2().to(args.device) #can't train well, give up
+                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Cifar100_150_alpha01" in args.dataset:
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Cifar100_200_alpha01" in args.dataset:
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Cifar100_250_alpha01" in args.dataset:
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+            elif "Cifar100_300_alpha01" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "CINIC10_100_alpha01" in args.dataset:
-                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
                 #args.model = FedProtoCINIC10().to(args.device)
                 #args.model = FedProtoCINIC10_V2(num_classes=args.num_classes, architecture='mobilenetv2')
                 #args.model = args.model.to(args.device)
                 #args.model = FedProtoCINIC10_V3().to(args.device)
                 #args.model = FedProtoCINIC10_ShuffleNetV2().to(args.device)
                 #args.model = FedProtoCINIC10_EfficientNetV2S().to(args.device)
-                args.model = FedProtoCINIC10_MobileNetV2_new().to(args.device)
+                #args.model = FedProtoCINIC10_MobileNetV2_new().to(args.device)
                 #args.model = FedProtoCINIC10_MobileNetV3_Small().to(args.device)
                 #args.model = FedProtoCINIC10_SqueezeNet().to(args.device)
             elif "CINIC10_300_alpha01" in args.dataset:
@@ -212,10 +220,14 @@ def run(args):
 
     reporter.report()
 
+    report_dir = f"../results/{args.num_clients}_{args.expID}/report"
+    os.makedirs(report_dir, exist_ok=True)
+    reporter.report_image(report_dir + '/report.png')
+
 
 if __name__ == "__main__":
-    total_start = time.time()
 
+    total_start = time.time()
     parser = argparse.ArgumentParser()
     # general
     parser.add_argument('-go', "--goal", type=str, default="test", 

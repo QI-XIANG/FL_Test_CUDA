@@ -40,3 +40,12 @@ FL_Test_Env_CUDA/dataset/Cifar100_100/rawdata/cifar-100-python/train
 !FL_Test_Env_CUDA/dataset/generate_svhn.py
 FL_Test_Env_CUDA/.git/objects/pack/pack-0cd5bfacebc44f35374f36c3fde59421063eb70f.pack
 FL_Test_Env_CUDA/dataset/CINIC10/CINIC-10.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_200_alpha01/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_200_alpha01/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_150_alpha01/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_150_alpha01/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_300_alpha01/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_300_alpha01/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/dataset/Cifar100_250_alpha01/rawdata/cifar-100-python.tar.gz
+FL_Test_Env_CUDA/dataset/Cifar100_250_alpha01/rawdata/cifar-100-python/train
+zip_result/

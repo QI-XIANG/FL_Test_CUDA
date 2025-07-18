@@ -31,6 +31,7 @@ class Server(object):
         self.batch_size = args.batch_size  # 批次大小
         self.learning_rate = args.local_learning_rate  # 學習率
         self.global_model = copy.deepcopy(args.model)  # 全局模型（依資料集動態指定）
+        self.global_model.to(self.device)
         self.num_clients = args.num_clients  # 客戶端數量
         self.join_ratio = args.join_ratio  # 參與比例
         self.random_join_ratio = args.random_join_ratio  # 是否隨機參與
@@ -95,6 +96,8 @@ class Server(object):
         self.server = args.algorithm  # 伺服器演算法
         self.Budget = []  # 預算記錄
         self.weight_option = args.weight_option  # 權重選項
+
+        self.testdataloader = self.get_test_data()
 
         # 判斷是否為多標籤資料集
         self.is_multilabel = (args.dataset.lower() == 'celeba')
@@ -236,7 +239,7 @@ class Server(object):
                     if self.num_classes == 2:
                         lb = lb[:, :2]
                     y_true.append(lb)
-
+        
         if test_num == 0:
             if self.is_multilabel:
                 return 0, 0, 0.0, torch.zeros(self.num_classes), 0.0, 0.0
@@ -433,6 +436,7 @@ class Server(object):
                         temp += weight * model.state_dict()[key]
                 # 更新全局模型參數
                 self.global_model.state_dict()[key].data.copy_(temp)
+
 
     def aggregate_parameters(self, clients_weight):
         """聚合參數"""

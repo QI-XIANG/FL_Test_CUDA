@@ -29,7 +29,8 @@ class clientAVG(Client):
         """
         在客戶端訓練模型，支援 CelebA 多標籤分類。
         """
-        trainloader = self.load_train_data()
+        #trainloader = self.load_train_data()
+        trainloader = self.trainDataLoader
         self.model.train()
 
         # 差分隱私初始化
@@ -100,7 +101,8 @@ class clientAVG(Client):
         total_loss = 0.0
         total_samples = 0
 
-        testloader = self.load_test_data()  # 載入測試資料
+        #testloader = self.load_test_data()  # 載入測試資料
+        testloader = self.testDataLoader
         with torch.no_grad():  # 評估時不計算梯度
             for x, y in testloader:
                 x = x.to(self.device)
