@@ -56,7 +56,9 @@ class Client(object):
         self.learning_rate = args.local_learning_rate
         self.local_epochs = args.local_epochs
         self.is_multilabel = (self.dataset.lower() == 'celeba')  # 添加多標籤標誌
-        self.data_augmentation = True # 是否使用數據增強
+        self.data_augmentation = False if args.data_enhancement <= 0 else True # 是否使用數據增強
+
+        #print(f"客戶端 {self.id} 的數據增強狀態為: {self.data_augmentation}")
 
         # 檢查是否有 BatchNorm 層（這裡使用 GroupNorm，無需調整）
         self.has_BatchNorm = False

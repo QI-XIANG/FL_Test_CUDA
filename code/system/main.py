@@ -85,7 +85,9 @@ def run(args):
             elif "Cifar10_20" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_100_alpha01" in args.dataset:
-                args.model = FedProtoCifar100().to(args.device)
+                #args.model = FedProtoCifar100().to(args.device)
+                #args.model = FedProtoCifar100_V2().to(args.device)
+                #args.model = FedProtoCifar100_ResNet9().to(args.device)
                 #args.model = FedProtoCIFAR100_V3().to(args.device)
                 #args.model = FedProtoCifar100_MobileNetV3_Small().to(args.device) #can't train well, give up
                 #args.model = FedProtoCIFAR100_MobileNetV2().to(args.device)
@@ -95,7 +97,8 @@ def run(args):
                 #args.model = FedProtoCIFAR100_SqueezeNet().to(args.device) 
                 #args.model = FedProtoCifar100_SqueezeNet_new().to(args.device)
                 #args.model = FedProtoCIFAR100_ShuffleNetV2().to(args.device) #can't train well, give up
-                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                #args.model = FedAvgCNN_V2(in_features=3, num_classes=args.num_classes).to(args.device)
             elif "Cifar100_150_alpha01" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_200_alpha01" in args.dataset:
@@ -292,6 +295,8 @@ if __name__ == "__main__":
     parser.add_argument('-at', "--attack_type", type=str, default = "label_flipping")
     # experiment id
     parser.add_argument('-eid', "--expID", type=str, default = "test")
+    # data enhabcement
+    parser.add_argument('-de', "--data_enhancement", type=int, default = -1)
     
     args = parser.parse_args()
 

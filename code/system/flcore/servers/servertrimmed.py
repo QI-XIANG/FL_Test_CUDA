@@ -17,7 +17,7 @@ from flcore.servers.client_selection.Random import Random
 from flcore.servers.client_selection.Thompson import Thompson
 from flcore.servers.client_selection.UCB import UCB
 
-
+import threading
 
 class FedTrimmed(Server):
     def __init__(self, args, times, agent = None):
@@ -31,12 +31,25 @@ class FedTrimmed(Server):
         self.robustLR_threshold = 7
         self.server_lr = 1e-3
 
+        # 初始化客戶端梯度（用於 RSVD）
+        self.client_gradients = {}  # 儲存每個客戶端的梯度
+        self.gradients_available = False  # 標誌是否已有梯度可用
+        self.global_accuracy_history = []  # 全局準確率歷史記錄
+
+        self.model = args.model  # 全局模型（依資料集動態指定）
+        
+        # 判斷是否為多標籤資料集（僅 CelebA 為多標籤）
+        self.is_multilabel = (args.dataset.lower() == 'celeba')
+
+        self.dynamic = args.dynamic_training
+
         print(f"\nJoin ratio / total clients: {self.join_ratio} / {self.num_clients}")
         print("Finished creating server and clients.")
 
         # self.load_model()
 
     def get_vector_no_bn(self, model):
+        """獲取模型參數向量，排除批次正規化層"""
         bn_key = ['conv1.1.weight', 'conv1.1.bias', 'conv1.1.running_mean', 'conv1.1.running_var', 'conv1.1.num_batches_tracked',
                   'conv2.1.weight', 'conv2.1.bias', 'conv2.1.running_mean', 'conv2.1.running_var', 'conv2.1.num_batches_tracked']
         v = []
@@ -70,12 +83,12 @@ class FedTrimmed(Server):
     
     def train(self):
         self.send_models() #initialize model
-        testloaderfull = self.get_test_data()
+        #testloaderfull = self.get_test_data()
 
-        if self.args.select_clients_algorithm == "Random":
+        if self.select_clients_algorithm == "Random":
             select_agent = Random(self.num_clients, self.num_join_clients, self.random_join_ratio)
 
-        elif self.args.select_clients_algorithm == "UCB":
+        elif self.select_clients_algorithm == "UCB":
             select_agent = UCB(self.num_clients, self.num_join_clients)
 
         # elif self.args.selected_clients_algorithm == "DQN":
@@ -83,7 +96,7 @@ class FedTrimmed(Server):
         #     action = self.agent.select_action(state)
         #     self.selected_clients = [self.clients[c] for c in action]
         
-        elif self.args.select_clients_algorithm == "Thompson":
+        elif self.select_clients_algorithm == "Thompson":
             select_agent = Thompson(num_clients=self.num_clients, num_selections=self.num_join_clients)
 
         
@@ -119,8 +132,39 @@ class FedTrimmed(Server):
                 print(f"history acc: {self.acc_his}")
                 # <= mh code 
 
-                for client in self.selected_clients:
-                    client.train()
+                def split_and_map(input_number, total_range, parts=4):
+                    # Compute thresholds using split_number logic
+                    part_size = total_range / parts
+                    thresholds = [round(part_size * i) for i in range(1, parts + 1)]
+
+                    # Map input_number to a value based on thresholds
+                    for i, threshold in enumerate(thresholds):
+                        if input_number <= threshold:
+                            return i
+                    return parts - 1  # Return the last index if number exceeds all thresholds
+
+                if self.dynamic > 0:
+                    current_index = split_and_map(i, self.global_rounds)
+                    #print(f"current index: {current_index}")
+                else:
+                    current_index = 0
+
+                streams = [torch.cuda.Stream(device=self.device) for _ in self.selected_clients]
+
+                def client_train_with_stream(client, stream, current_index):
+                    with torch.cuda.stream(stream):
+                        client.set_current_index(current_index)
+                        client.train()
+                    stream.synchronize()  # 確保這個 client 訓練完成
+
+                threads = []
+                for client, stream in zip(self.selected_clients, streams):
+                    t = threading.Thread(target=client_train_with_stream, args=(client, stream, current_index))
+                    t.start()
+                    threads.append(t)
+
+                for t in threads:
+                    t.join()
 
                 # threads = [Thread(target=client.train)
                 #            for client in self.selected_clients]
@@ -147,7 +191,7 @@ class FedTrimmed(Server):
                 if i%self.eval_gap == 0:
                     # print(f"\n-------------Round number: {i}-------------")
                     print("\nEvaluate global model")
-                    acc, train_loss, auc = self.evaluate()
+                    acc, train_loss, auc, f1, auc_pr_score = self.evaluate()
                     # acc, train_loss = self.evaluate_trust()
                     self.acc_data.append(acc)
                     self.loss_data.append(train_loss)

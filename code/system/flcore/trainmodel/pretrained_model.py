@@ -1537,3 +1537,73 @@ class FedProtoCifar100_MNASNet_new(nn.Module):
         return x
 
 #---------------------------------------------------------------------------------------------------
+
+class BasicBlock_ResNet9(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(BasicBlock_ResNet9, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, 3, stride, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.conv2 = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, 1, stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+
+    def forward(self, x):
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        return self.relu(out)
+
+class FedProtoCifar100_ResNet9(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100_ResNet9, self).__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 64, 3, 1, 1),  # CIFAR-100 input
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(64, 128, 3, 1, 1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+        self.res1 = BasicBlock_ResNet9(128, 128)
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(128, 256, 3, 1, 1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(256, 512, 3, 1, 1),
+            nn.BatchNorm2d(512),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+
+        self.res2 = BasicBlock_ResNet9(512, 512)
+
+        self.pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.res1(out)
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.res2(out)
+        out = self.pool(out)
+        out = out.view(out.size(0), -1)
+        return self.fc(out)
+
+#---------------------------------------------------------------------------------------------------

@@ -249,6 +249,62 @@ class FedAvgCNN(nn.Module):
         out = self.fc1(out)
         return out
 
+class FedAvgCNN_V2(nn.Module):
+    def __init__(self, in_features=3, num_classes=100, dim=None):
+        super(FedAvgCNN_V2, self).__init__()
+        
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_features, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2)
+        )
+
+        # Infer dim if not provided
+        if dim is None:
+            with torch.no_grad():
+                dummy_input = torch.zeros(1, in_features, 32, 32)
+                dummy_output = self.conv3(self.conv2(self.conv1(dummy_input)))
+                dim = dummy_output.view(1, -1).shape[1]
+
+        self.dim = dim
+
+        self.fc1 = nn.Sequential(
+            nn.Linear(dim, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2)
+        )
+        self.fc = nn.Linear(512, num_classes)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        x = self.fc(x)
+        return x
+
+    def feature_extractor(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = torch.flatten(x, 1)
+        x = self.fc1(x)
+        return x
+
 class FedAvgCifar10(nn.Module):
     def __init__(self, num_classes=10):
         super(FedAvgCifar10, self).__init__()
@@ -433,6 +489,25 @@ class FedProtoCifar100(nn.Module):
     def forward(self, x):
         x = self.feature_extractor(x)
         x = x.view(x.size(0), -1)  # Flatten the tensor
+        x = self.fc(x)
+        return x
+
+
+class FedProtoCifar100_V2(nn.Module):
+    def __init__(self, num_classes=100):
+        super(FedProtoCifar100_V2, self).__init__()
+        resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+
+        # Modify the first conv layer for CIFAR (3x32x32)
+        resnet.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        resnet.maxpool = nn.Identity()  # Remove maxpooling to preserve resolution
+
+        self.feature_extractor = nn.Sequential(*list(resnet.children())[:-1])  # Remove final FC layer
+        self.fc = nn.Linear(resnet.fc.in_features, num_classes)
+
+    def forward(self, x):
+        x = self.feature_extractor(x)
+        x = x.view(x.size(0), -1)  # Flatten
         x = self.fc(x)
         return x
 
