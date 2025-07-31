@@ -13,9 +13,9 @@ import seaborn as sns
 
 random.seed(1)
 np.random.seed(1)
-num_clients = 100
+num_clients = 50
 num_classes = 100
-dir_path = f"Cifar100_{num_clients}_alpha1/"
+dir_path = f"Cifar100_{num_clients}_alpha01/"
 
 # Allocate data to users
 def generate_cifar100(dir_path, num_clients, num_classes, niid, balance, partition):

@@ -183,6 +183,7 @@ class FedKrum(Server):
 
                 self.receive_models()
                 clients_weight = [parameters_to_vector(i.parameters()).cpu().detach().numpy() for i in self.uploaded_models]
+                print(len(self.uploaded_models))
                 krum_clients_index = self.krum(clients_weight, int(self.num_join_clients*self.poisoned_ratio))
                 print(krum_clients_index)
                 # self.uploaded_models = [self.uploaded_models[krum_clients_index]]
@@ -191,19 +192,19 @@ class FedKrum(Server):
                     self.call_dlg(i)
                 # self.aggregate_parameters([1])
                 self.global_model = copy.deepcopy(self.uploaded_models[krum_clients_index])
-                # self.aggregate_parameters_bn([1])
+                self.aggregate_parameters_bn([1])
 
 
-                # self.send_models_bn()
-                self.send_models()
+                self.send_models_bn()
+                #self.send_models()
 
                 if i%self.eval_gap == 0:
                     # print(f"\n-------------Round number: {i}-------------")
                     # Unpack three values from evaluate() function
                     acc, train_loss, auc, f1, auc_pr_score = self.evaluate()  # Unpacked to handle 5 return values
-                    self.acc_data.append(acc)
-                    self.loss_data.append(train_loss)
-                    self.auc_data.append(auc)
+                    #self.acc_data.append(acc)
+                    #self.loss_data.append(train_loss)
+                    #self.auc_data.append(auc)
                     mlflow.log_metric("global accuracy", acc, step=i)
                     mlflow.log_metric("train_loss", train_loss, step=i)
                     mlflow.log_metric("test_auc", auc, step=i)  # Log the AUC value too
@@ -222,6 +223,8 @@ class FedKrum(Server):
 
                 self.Budget.append(time.time() - s_t)
                 print('-'*25, 'time cost', '-'*25, self.Budget[-1])
+
+                self.time_cost_list.append(self.Budget[-1])
 
                 if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                     break

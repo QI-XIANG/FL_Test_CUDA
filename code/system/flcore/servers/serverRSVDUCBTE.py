@@ -14,6 +14,7 @@ from utils.data_utils import read_client_data  # 假設這是您的數據工具�
 from sklearn.preprocessing import label_binarize
 from sklearn import metrics
 
+
 from flcore.servers.client_selection.Random import Random
 from flcore.servers.client_selection.Thompson import Thompson
 from flcore.servers.client_selection.UCB import UCB
@@ -24,6 +25,7 @@ from flcore.servers.client_selection.RSVD import RSVDClientDetection
 from flcore.servers.client_selection.RSVDUCB_old import RSVDUCBClientSelection
 from flcore.servers.client_selection.RSVDUCBT import RSVDUCBThompson
 from flcore.servers.client_selection.RSVDUCBTE import EnhancedRSVDUCBThompson
+import threading
 
 class FedRSVDUCBTE(Server):
     def __init__(self, args, times, agent=None):
@@ -65,7 +67,7 @@ class FedRSVDUCBTE(Server):
     def train(self):
         """執行聯邦平均訓練過程"""
         self.send_models()  # 初始化模型分發
-        testloaderfull = self.get_test_data()  # 獲取測試資料
+        testloaderfull = self.testdataloader  # 取得測試資料
 
         # 根據選擇演算法初始化客戶端選擇代理
         if self.select_clients_algorithm == "Random":
@@ -85,7 +87,9 @@ class FedRSVDUCBTE(Server):
         elif self.select_clients_algorithm == "RSVDUCBT":
             select_agent = RSVDUCBThompson(self.num_clients, self.num_join_clients)
         elif self.select_clients_algorithm == "RSVDUCBTE":
-            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
+            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
+            server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
+            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
         elif self.select_clients_algorithm == "Thompson":
             select_agent = Thompson(num_clients=self.num_clients, num_selections=self.num_join_clients)
         else:
@@ -112,7 +116,10 @@ class FedRSVDUCBTE(Server):
                         counter_for_RSVD += 1
                     else:
                         if counter_for_RSVD == 1:
-                            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
+                            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
+                            server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
+                            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
+                            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients)
                         selected_ids = select_agent.select_clients(i, self.client_gradients)
                         counter_for_RSVD += 1
                 else:
@@ -122,7 +129,7 @@ class FedRSVDUCBTE(Server):
                 self.selected_clients = [self.clients[c] for c in selected_ids]
 
                 poisoned_selected = [idx for idx in selected_ids if self.clients[idx].poisoned]
-                print(f"Poisoned clients among FedAvg clients: {poisoned_selected}")
+                print(f"Poisoned clients among FedRSVDUCBTE clients: {poisoned_selected}")
 
                 print(f"\n-------------Round number: {i}-------------")
 
@@ -145,13 +152,50 @@ class FedRSVDUCBTE(Server):
                 else:
                     current_index = 0
 
-                for client in self.selected_clients:
+                streams = [torch.cuda.Stream(device=self.device) for _ in self.selected_clients]
+
+                def client_train_with_stream(client, stream, current_index, collect_gradients, gradient_store):
+                    """
+                    每個 client 的訓練任務，配合 CUDA stream 並收集梯度（如果啟用）
+                    """
+                    with torch.cuda.stream(stream):
+                        client.set_current_index(current_index)
+                        client.train()
+                        if collect_gradients:
+                            gradients = client.get_training_gradients()
+                            gradient_store[client.id] = gradients
+                    stream.synchronize()  # 等待這個 stream 的 client 完成
+
+                # --- 準備多個 CUDA stream 和 client gradient 緩存 ---
+                streams = [torch.cuda.Stream() for _ in self.selected_clients]
+                collect_gradients = self.select_clients_algorithm in ["RSVDUCBTE"]
+                gradient_store = {}  # client.id -> gradients
+
+                # --- 啟動多執行緒 client 訓練 ---
+                threads = []
+                for client, stream in zip(self.selected_clients, streams):
+                    t = threading.Thread(
+                        target=client_train_with_stream,
+                        args=(client, stream, current_index, collect_gradients, gradient_store)
+                    )
+                    t.start()
+                    threads.append(t)
+
+                # --- 等待所有執行緒完成 ---
+                for t in threads:
+                    t.join()
+
+                # --- 如果是 RSVDUCBTE 模式，記錄所有 client 的梯度 ---
+                if collect_gradients:
+                    self.client_gradients = gradient_store
+
+                '''for client in self.selected_clients:
                     client.set_current_index(current_index)
                     #print(f"client: {client.id}, current_index: {current_index}")
                     client.train()
                     if self.select_clients_algorithm in ["RSVDUCBTE"]:
                         gradients = client.get_training_gradients()
-                        self.client_gradients[client.id] = gradients
+                        self.client_gradients[client.id] = gradients'''
 
                 if not self.gradients_available:
                     self.gradients_available = True
@@ -160,21 +204,60 @@ class FedRSVDUCBTE(Server):
 
                 if self.select_clients_algorithm in ["RSVDUCBTE"] and self.gradients_available:
                     clients_acc = []
+                    clients_f1 = []
+                    clients_auc_pr = []
+                    clients_avg_loss = []
+                    clients_composite_reward = []
+                    clients_global_test_acc = None
+
+                    # === Step 1: Evaluate selected clients on global test set ===
                     for client_model, client in zip(self.uploaded_models, self.selected_clients):
-                        test_acc, test_num, auc = self.test_metrics_all(client_model, testloaderfull)
-                        clients_acc.append(test_acc / test_num if test_num > 0 else 0)
+                        test_acc, test_num, auc, f1, auc_pr, avg_loss = self.test_metrics_all(client_model, testloaderfull)
+                        
+                        clients_global_test_acc = test_acc
 
-                    reward_decay = 0.9
-                    for reward, client in zip(clients_acc, self.selected_clients):
+                        # Normalize and filter each metric to avoid negative/NaN values
+                        acc_score = test_acc / test_num if test_num > 0 else 0
+                        f1_score = f1 if f1 > 0 else 0
+                        auc_pr_score = auc_pr if auc_pr > 0 else 0
+                        
+                        clients_acc.append(acc_score)
+                        clients_f1.append(f1_score)
+                        clients_auc_pr.append(auc_pr_score)
+                        clients_avg_loss.append(avg_loss)
+
+                    # === Step 2: Define composite reward ===
+                    # You can tune the weights below depending on your dataset imbalance or priority
+                    '''weight_acc = 0.4
+                    weight_f1 = 0.3
+                    weight_auc_pr = 0.3
+
+                    for acc, f1, auc_pr in zip(clients_acc, clients_f1, clients_auc_pr):
+                        # Composite reward combines all three metrics
+                        composite_reward = weight_acc * acc + weight_f1 * f1 + weight_auc_pr * auc_pr
+                        clients_composite_reward.append(composite_reward)'''
+
+                    # === Step 3: Apply reward decay and update reward history ===
+                    '''reward_decay = 0.9
+                    for reward, client in zip(clients_composite_reward, self.selected_clients):
+                        # Exponentially decay past rewards and add current
                         self.sums_of_reward[client.id] = self.sums_of_reward[client.id] * reward_decay + reward
-                        self.numbers_of_selections[client.id] += 1
-                    
-                    rewards = clients_acc
-                    select_agent.update(selected_ids, rewards)
+                        self.numbers_of_selections[client.id] += 1'''
+
+                    # === Step 4: Provide updated reward list to selection algorithm ===
+                    if counter_for_RSVD > 1:
+                        rewards = select_agent.compute_composite_rewards(clients_acc, clients_f1, clients_auc_pr, clients_avg_loss, selected_ids)
+                        select_agent.update(selected_ids, rewards, clients_global_test_acc)
+                    '''rewards = clients_composite_reward
+                    select_agent.update(selected_ids, rewards)'''
                 
+                same_weight = None # initialize the variable
 
-                same_weight = [1/self.num_join_clients] * self.num_join_clients
-
+                # first round use equal weight
+                if counter_for_RSVD <= 1:
+                    same_weight = [1/self.num_join_clients] * self.num_join_clients
+                
+                # second round use adaptive weight
                 if self.select_clients_algorithm in ["RSVDUCBTE"] and counter_for_RSVD > 1 :
                     print("Use Adaptive Weights")
                     same_weight = select_agent.contribution_weights
@@ -217,55 +300,6 @@ class FedRSVDUCBTE(Server):
         
         self.save_results()
         self.save_global_model()
-
-    def test_metrics_all(self, client_model, testloaderfull):
-        """測試模型效能，動態適配單標籤與多標籤資料集"""
-        client_model.eval()
-
-        test_acc = 0
-        test_num = 0
-        y_prob = []
-        y_true = []
-
-        with torch.no_grad():
-            for x, y in testloaderfull:
-                x = x.to(self.device)
-                if self.is_multilabel:
-                    y = y.to(self.device).float()  # 多標籤資料集（如 CelebA）使用浮點數
-                else:
-                    y = y.to(self.device).long()  # 單標籤資料集使用整數
-
-                output = client_model(x)
-
-                if self.is_multilabel:
-                    pred = (torch.sigmoid(output) > 0.5).float()
-                    test_acc += torch.sum(pred == y).item() / (y.shape[0] * self.num_classes)
-                else:
-                    test_acc += torch.sum(torch.argmax(output, dim=1) == y).item()
-
-                test_num += y.shape[0]
-
-                y_prob.append(output.detach().cpu().numpy())
-                if self.is_multilabel:
-                    y_true.append(y.detach().cpu().numpy())
-                else:
-                    nc = self.num_classes
-                    if self.num_classes == 2:
-                        nc += 1
-                    lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
-                    if self.num_classes == 2:
-                        lb = lb[:, :2]
-                    y_true.append(lb)
-
-        if test_num == 0:
-            return 0, 0, 0.0
-
-        y_prob = np.concatenate(y_prob, axis=0)
-        y_true = np.concatenate(y_true, axis=0)
-
-        auc = metrics.roc_auc_score(y_true, y_prob, average='micro', multi_class='ovr') if y_true.size > 0 else 0.0
-        
-        return test_acc, test_num, auc
 
     def compute_robustLR(self, agent_updates):
         """計算 RobustLR 更新"""

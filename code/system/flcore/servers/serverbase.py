@@ -194,7 +194,7 @@ class Server(object):
         print(f"選中的客戶端 ID: {selected_clients_id}")
         return selected_clients
 
-    def test_metrics_all(self, client_model, testloaderfull):
+    def test_metrics_all_old(self, client_model, testloaderfull):
         """測試模型效能，返回總正確屬性數、有效屬性數、AUC、F1 分數和 AUC-PR"""
         client_model.eval()
 
@@ -282,6 +282,101 @@ class Server(object):
         if self.is_multilabel:
             return test_acc, test_num, auc_score, label_acc, f1, auc_pr
         return test_acc, test_num, auc_score, f1, auc_pr
+    
+    def test_metrics_all(self, client_model, testloaderfull):
+        """測試模型效能，返回總正確屬性數、有效屬性數、AUC、F1 分數、AUC-PR 和平均 Loss"""
+        client_model.eval()
+
+        test_acc = 0
+        test_num = 0
+        total_loss = 0.0
+        y_prob = []
+        y_true = []
+        y_pred = []
+
+        if self.is_multilabel:
+            correct_per_label = torch.zeros(self.num_classes).to(self.device)
+            total_per_label = torch.zeros(self.num_classes).to(self.device)
+            valid_attributes = torch.zeros(self.num_classes).to(self.device)
+            criterion = torch.nn.BCEWithLogitsLoss(reduction='sum')
+        else:
+            criterion = torch.nn.CrossEntropyLoss(reduction='sum')
+
+        with torch.no_grad():
+            for x, y in testloaderfull:
+                x = x.to(self.device)
+                output = client_model(x)
+
+                if self.is_multilabel:
+                    y = y.to(self.device).float()
+                    loss = criterion(output, y)
+                    pred = (torch.sigmoid(output) > 0.5).float()
+                    test_acc += torch.sum(pred == y).item()
+                    correct_per_label += torch.sum(pred == y, dim=0)
+                    total_per_label += y.shape[0]
+                    valid_attributes += (torch.sum(y, dim=0) > 0).float() * (torch.sum(1 - y, dim=0) > 0).float()
+                    y_pred.append(pred.detach().cpu().numpy())
+                else:
+                    y = y.to(self.device).long()
+                    loss = criterion(output, y)
+                    pred = torch.argmax(output, dim=1)
+                    test_acc += torch.sum(pred == y).item()
+                    y_pred.append(pred.detach().cpu().numpy())
+
+                test_num += y.shape[0]
+                total_loss += loss.item()
+                y_prob.append(output.detach().cpu().numpy())
+
+                if self.is_multilabel:
+                    y_true.append(y.detach().cpu().numpy())
+                else:
+                    nc = self.num_classes
+                    if self.num_classes == 2:
+                        nc += 1
+                    lb = label_binarize(y.detach().cpu().numpy(), classes=np.arange(nc))
+                    if self.num_classes == 2:
+                        lb = lb[:, :2]
+                    y_true.append(lb)
+
+        if test_num == 0:
+            if self.is_multilabel:
+                return 0, 0, 0.0, torch.zeros(self.num_classes), 0.0, 0.0, 0.0
+            return 0, 0, 0.0, 0.0, 0.0, 0.0
+
+        avg_loss = total_loss / test_num
+
+        if self.is_multilabel:
+            valid_mask = (valid_attributes > 0).float()
+            effective_num_attributes = torch.sum(valid_mask).item() or 1
+            test_acc = test_acc / (test_num * effective_num_attributes)
+            label_acc = (correct_per_label / total_per_label).cpu().numpy() * valid_mask.cpu().numpy()
+        else:
+            test_acc = test_acc / test_num
+
+        y_prob = np.concatenate(y_prob, axis=0)
+        y_true = np.concatenate(y_true, axis=0)
+        y_pred = np.concatenate(y_pred, axis=0)
+
+        auc_score = metrics.roc_auc_score(y_true, y_prob, average='micro', multi_class='ovr') if y_true.size > 0 else 0.0
+
+        if self.is_multilabel:
+            f1 = f1_score(y_true, y_pred, average='micro', zero_division=0)
+        else:
+            f1 = f1_score(y_true.argmax(axis=1), y_pred, average='weighted', zero_division=0)
+
+        if self.is_multilabel:
+            precision, recall, _ = precision_recall_curve(y_true.ravel(), y_prob.ravel())
+            auc_pr = auc(recall, precision) if precision.size > 0 else 0.0
+        else:
+            auc_pr = 0.0
+            for i in range(self.num_classes):
+                precision, recall, _ = precision_recall_curve(y_true[:, i], y_prob[:, i])
+                auc_pr += auc(recall, precision) if precision.size > 0 else 0.0
+            auc_pr /= self.num_classes
+
+        if self.is_multilabel:
+            return test_acc, test_num, auc_score, label_acc, f1, auc_pr, avg_loss
+        return test_acc, test_num, auc_score, f1, auc_pr, avg_loss
 
     def params_to_vector(self, model):
         """將模型參數轉為向量"""
@@ -741,10 +836,10 @@ class Server(object):
         print("Average Test AUC: {:.4f}".format(test_auc))
         print("Average Test F1 Score: {:.4f}".format(test_f1))
         print("Average Test AUC-PR: {:.4f}".format(test_auc_pr))
-        print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
-        print("Std Test AUC: {:.4f}".format(np.std(aucs)))
-        print("Std Test F1 Score: {:.4f}".format(np.std(f1s)))
-        print("Std Test AUC-PR: {:.4f}".format(np.std(auc_prs)))
+        #print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
+        #print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+        #print("Std Test F1 Score: {:.4f}".format(np.std(f1s)))
+        #print("Std Test AUC-PR: {:.4f}".format(np.std(auc_prs)))
 
         if self.is_multilabel:
             print("\nEach Attribute Prediction Accuracy（CelebA）：")
@@ -790,7 +885,7 @@ class Server(object):
     def evaluate_trust(self, acc=None, loss=None):
         """評估信任客戶端的效能"""
         not_join = self.get_not_evaluate_index()
-        print("不參與評估的客戶端: ", not_join)
+        print("Not join evaluation clients: ", not_join)
         stats = self.test_metrics_trust(not_join)
         stats_train = self.train_metrics_trust(not_join)
 
@@ -817,24 +912,29 @@ class Server(object):
             self.rs_test_auc.append(test_auc)
             self.rs_test_f1.append(test_f1)
             self.rs_test_auc_pr.append(test_auc_pr)
+            self.acc_data.append(test_acc)
+            self.auc_data.append(test_auc)
+            self.f1_data.append(test_f1)
+            self.auc_pr_data.append(test_auc_pr)
         else:
             acc.append(test_acc)
 
         if loss is None:
             self.rs_train_loss.append(train_loss)
+            self.loss_data.append(train_loss)
         else:
             loss.append(train_loss)
 
-        print("信任評估")
-        print("平均訓練損失: {:.4f}".format(train_loss))
-        print("平均測試準確率: {:.4f}".format(test_acc))
-        print("平均測試 AUC: {:.4f}".format(test_auc))
-        print("平均測試 F1 分數: {:.4f}".format(test_f1))
-        print("平均測試 AUC-PR: {:.4f}".format(test_auc_pr))
-        print("標準差測試準確率: {:.4f}".format(np.std(accs)))
-        print("標準差測試 AUC: {:.4f}".format(np.std(aucs)))
-        print("標準差測試 F1 分數: {:.4f}".format(np.std(f1s)))
-        print("標準差測試 AUC-PR: {:.4f}".format(np.std(auc_prs)))
+        print("Evaluate Trust")
+        print("Average Training Loss: {:.4f}".format(train_loss))
+        print("Average Test Accuracy: {:.4f}".format(test_acc))
+        print("Average Test AUC: {:.4f}".format(test_auc))
+        print("Average Test F1 Score: {:.4f}".format(test_f1))
+        print("Average Test AUC-PR: {:.4f}".format(test_auc_pr))
+        #print("Std Test Accuracy: {:.4f}".format(np.std(accs)))
+        #print("Std Test AUC: {:.4f}".format(np.std(aucs)))
+        #print("Std Test F1 Score: {:.4f}".format(np.std(f1s)))
+        #print("Std Test AUC-PR: {:.4f}".format(np.std(auc_prs)))
 
         if len(self.acc_his) >= 3:
             self.acc_his.pop(0)

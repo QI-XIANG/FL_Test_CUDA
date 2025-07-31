@@ -193,9 +193,9 @@ class FedTrimmed(Server):
                     print("\nEvaluate global model")
                     acc, train_loss, auc, f1, auc_pr_score = self.evaluate()
                     # acc, train_loss = self.evaluate_trust()
-                    self.acc_data.append(acc)
-                    self.loss_data.append(train_loss)
-                    self.auc_data.append(auc)
+                    #self.acc_data.append(acc)
+                    #self.loss_data.append(train_loss)
+                    #self.auc_data.append(auc)
                     mlflow.log_metric("global accuracy", acc, step = i)
                     mlflow.log_metric("train_loss", train_loss, step = i)
 
@@ -213,7 +213,9 @@ class FedTrimmed(Server):
 
                 self.Budget.append(time.time() - s_t)
                 print('-'*25, 'time cost', '-'*25, self.Budget[-1])
-
+                
+                self.time_cost_list.append(self.Budget[-1])
+                
                 if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                     break
 

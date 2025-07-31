@@ -97,8 +97,8 @@ def run(args):
                 #args.model = FedProtoCIFAR100_SqueezeNet().to(args.device) 
                 #args.model = FedProtoCifar100_SqueezeNet_new().to(args.device)
                 #args.model = FedProtoCIFAR100_ShuffleNetV2().to(args.device) #can't train well, give up
-                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
-                #args.model = FedAvgCNN_V2(in_features=3, num_classes=args.num_classes).to(args.device)
+                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                args.model = FedAvgCNN_V2(in_features=3, num_classes=args.num_classes).to(args.device)
             elif "Cifar100_150_alpha01" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_200_alpha01" in args.dataset:
