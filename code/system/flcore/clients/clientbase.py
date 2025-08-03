@@ -93,6 +93,7 @@ class Client(object):
 
         self.testDataLoader = self.load_test_data()
         self.trainDataLoader = self.load_train_data()
+        self.trainDataLoader_clean = self.load_train_data_clean()
 
     def _apply_data_augmentation_cifar100(self, images):
         """
@@ -264,6 +265,13 @@ class Client(object):
             train_loader = DataLoader(train_data, batch_size, drop_last=True, shuffle=True) # 訓練資料通常需要 shuffle
 
         return train_loader
+    
+    def load_train_data_clean(self, batch_size=None):
+        if batch_size is None:
+            batch_size = self.batch_size
+        train_data = read_client_data(self.dataset, self.id, is_train=True)
+
+        return DataLoader(train_data, batch_size, drop_last=True, shuffle=False)
 
     def load_test_data(self, batch_size=None):
         """

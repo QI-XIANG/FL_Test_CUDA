@@ -217,7 +217,7 @@ class FedThompson(Server):
                 '''
                 clients_acc = []
                 for client_model, client in zip(self.uploaded_models, self.selected_clients):
-                    test_acc, test_num, auc_score, f1, auc_pr = self.test_metrics_all(client_model, testloaderfull)
+                    test_acc, test_num, auc_score, f1, auc_pr, avg_loss = self.test_metrics_all(client_model, testloaderfull)
                     #print(test_acc/test_num)
                     if client.poisoned:
                         clients_acc.append(test_acc/test_num)

@@ -13,7 +13,7 @@ import numpy as np
 from utils.data_utils import read_client_data  # 假設這是您的數據工具模組
 from sklearn.preprocessing import label_binarize
 from sklearn import metrics
-
+import random
 
 from flcore.servers.client_selection.Random import Random
 from flcore.servers.client_selection.Thompson import Thompson
@@ -88,8 +88,12 @@ class FedRSVDUCBTE(Server):
             select_agent = RSVDUCBThompson(self.num_clients, self.num_join_clients)
         elif self.select_clients_algorithm == "RSVDUCBTE":
             #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
-            server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
-            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
+            #server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
+            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
+            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients)
+            # random select one client
+            #random_client = random.randint(0, self.num_clients - 1)
+            #select_agent.random_load_data_from_client(random_client, self.clients[random_client].trainDataLoader_clean)
         elif self.select_clients_algorithm == "Thompson":
             select_agent = Thompson(num_clients=self.num_clients, num_selections=self.num_join_clients)
         else:
@@ -117,14 +121,20 @@ class FedRSVDUCBTE(Server):
                     else:
                         if counter_for_RSVD == 1:
                             #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, self.global_accuracy_history)
-                            server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
-                            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
-                            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients)
+                            #server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
+                            #select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients, server_data_path)
+                            select_agent = EnhancedRSVDUCBThompson(self.num_clients, self.num_join_clients)
+                            #random_client = random.randint(0, self.num_clients - 1)
+                            #select_agent.random_load_data_from_client(random_client, self.clients[random_client].trainDataLoader_clean)
+                        #elif counter_for_RSVD > 1:
+                            # random select one client
+                            #random_client = random.randint(0, self.num_clients - 1)
+                            #select_agent.random_load_data_from_client(random_client, self.clients[random_client].trainDataLoader_clean)
                         selected_ids = select_agent.select_clients(i, self.client_gradients)
                         counter_for_RSVD += 1
                 else:
                     selected_ids = select_agent.select_clients(i)
-                
+                                
                 print("Selected clients:", selected_ids)
                 self.selected_clients = [self.clients[c] for c in selected_ids]
 
@@ -247,7 +257,7 @@ class FedRSVDUCBTE(Server):
                     # === Step 4: Provide updated reward list to selection algorithm ===
                     if counter_for_RSVD > 1:
                         rewards = select_agent.compute_composite_rewards(clients_acc, clients_f1, clients_auc_pr, clients_avg_loss, selected_ids)
-                        select_agent.update(selected_ids, rewards, clients_global_test_acc)
+                        select_agent.update(selected_ids, rewards, clients_global_test_acc, self.global_model)
                     '''rewards = clients_composite_reward
                     select_agent.update(selected_ids, rewards)'''
                 

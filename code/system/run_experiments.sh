@@ -27,13 +27,21 @@
 #}
 
 
+#echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
+#python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.1 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test01
+#echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
+#python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.2 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test02
+#echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
+#python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.3 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test03
 echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
-python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.1 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test01
+python main.py -data CINIC10_100_alpha01 -nc 100 -nb 10 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.4 -ls 5 -gr 100 -dynamic -1 -de -1 -at adaptive_label_flipping -eid test520
 echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
-python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.2 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test02
+python main.py -data CINIC10_100_alpha01 -nc 100 -nb 10 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.3 -ls 5 -gr 100 -dynamic -1 -de -1 -at adaptive_label_flipping -eid test521
 echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
-python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.3 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test03
+python main.py -data CINIC10_100_alpha01 -nc 100 -nb 10 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.2 -ls 5 -gr 100 -dynamic -1 -de -1 -at adaptive_label_flipping -eid test522
 echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
-python main.py -data Cifar100_100_alpha01 -nc 100 -nb 100 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.4 -ls 5 -gr 100 -dynamic -1 -de 1 -at adaptive_label_flipping -eid test04
+python main.py -data CINIC10_100_alpha01 -nc 100 -nb 10 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0.1 -ls 5 -gr 100 -dynamic -1 -de -1 -at adaptive_label_flipping -eid test523
+echo "Starting experiment with poisoned_ratio 0 mobileNetV2_new with dtat enhancement"
+python main.py -data CINIC10_100_alpha01 -nc 100 -nb 10 -algo FedRSVDUCBTE -sca RSVDUCBTE -pr 0 -ls 5 -gr 100 -dynamic -1 -de -1 -at adaptive_label_flipping -eid test524
 
 echo "All experiments finished!"
