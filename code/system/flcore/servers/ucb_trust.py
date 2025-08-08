@@ -56,25 +56,7 @@ class FedAvg(Server):
                 s_t = time.time()
                 
 
-                # self.send_models()
-
-                # if i%self.eval_gap == 0:
-                #     print(f"\n-------------Round number: {i}-------------")
-                #     print("\nEvaluate global model")
-                #     self.evaluate()
-
-            
-                
-                # self.selected_clients = self.select_clients()
-                # s = [c.id for c in self.selected_clients]
-                # print(s)
-
                 # => mh code 
-                '''
-                select client by DQN
-                '''
-
-                
                 '''
                 select client by UCB
                 '''
@@ -110,58 +92,12 @@ class FedAvg(Server):
 
                 self.receive_models()
                 
-                # global_model_vector = parameters_to_vector(self.global_model.parameters())
-                # print(global_model_vector)
-                # update = [parameters_to_vector(model.parameters()) - global_model_vector for model in self.uploaded_models]
-                # lr_vector = torch.Tensor([self.server_lr]*len(global_model_vector)).to(self.device)
-                # self.compute_robustLR(update)
-
-                # aggregated_updates = torch.zeros_like(update[0])
-                # for u in update:
-                #     aggregated_updates += u
-                # aggregated_updates = aggregated_updates / self.num_join_clients
-
-                # cur_global_params = parameters_to_vector(self.global_model.parameters())
-                # new_global_params =  (cur_global_params + lr_vector*aggregated_updates).float() 
-                # vector_to_parameters(new_global_params, self.global_model.parameters())
-
-                # => mh code 
-                '''
-                consine similarity
-                ''' 
-                # import numpy as np
-                # global_model_vector = parameters_to_vector(self.global_model.parameters())
-                # update = [parameters_to_vector(model.parameters()) - global_model_vector for model in self.uploaded_models]
-                # # global_model_vector = self.get_vector_no_bn(self.global_model)
-                # # update = []
-                # # for model in self.uploaded_models:
-                # #     client_model_vector = self.get_vector_no_bn(model)
-                # #     update.append(client_model_vector - global_model_vector)
-
-                # detect_anomaly_model = torch.load('vae_noniid_pat.pt').to("cuda")
-                # detect_anomaly_model.eval()
-                # error = []
-                # for u in update:
-                #     # predict = detect_anomaly_model(u)
-                #     predict, mean, logvar = detect_anomaly_model(u)
-                #     # reconstruction_loss = torch.nn.BCELoss(reduction='none')(predict, u)
-                #     # kl_divergence = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
-                #     # total_loss = reconstruction_loss + kl_divergence
-                #     # error.append(torch.mean(total_loss).item())
-                #     r_error = torch.mean(torch.pow(predict - u, 2))
-                #     error.append(r_error.item())
-                
-                # threshold = np.quantile(error, 0.3)
-                
-                # attacker = error > threshold
-                # if i > 50: breakpoint()
-                
                 '''
                 calculate each model's accuracy
                 '''
                 clients_acc = []
                 for client_model, client in zip(self.uploaded_models, self.selected_clients):
-                    test_acc, test_num, auc= self.test_metrics_all(client_model, testloaderfull)
+                    test_acc, test_num, auc, f1, auc_pr, avg_loss = self.test_metrics_all(client_model, testloaderfull)
                     print(test_acc/test_num)
                     if client.poisoned:
                         clients_acc.append(test_acc/test_num)
@@ -172,9 +108,6 @@ class FedAvg(Server):
                 reward_decay = 0.9
                 for reward, client in zip(clients_acc, self.selected_clients):
                     self.sums_of_reward[client.id] =  self.sums_of_reward[client.id] * reward_decay + reward
-                # breakpoint()
-                
-                # print(clients_acc)
                 
                 # kmeans = KMeans(n_clusters= 2)
                 # label = kmeans.fit_predict(pd.DataFrame(clients_acc))
@@ -184,21 +117,6 @@ class FedAvg(Server):
                 '''
                 check whether it is melicious node and record
                 '''
-                # trust_value = 1
-                # for client in self.selected_clients:
-                #     if client.poisoned:
-                #         self.interact[client.id].append(1-trust_value)
-                #         # self.clients_acc_his[index].append(0.1*acc)
-                #     else:
-                #         self.interact[client.id].append(trust_value)
-                #         # self.clients_acc_his[index].append(acc)
-                # acc_decay = 1
-                # for index, (client, cacc) in enumerate(zip(self.selected_clients, clients_acc_weight)):
-                #     if client.poisoned:
-                #         clients_acc_weight[index] = cacc*acc_decay
-
-                # mlflow.log_param("trust_value", trust_value)
-                # mlflow.log_param("acc_deacy", acc_decay)
 
                 same_weight = [1/self.num_join_clients] * self.num_join_clients
                 # <= mh code 
@@ -217,7 +135,7 @@ class FedAvg(Server):
                     # print(f"\n-------------Round number: {i}-------------")
                     print("\nEvaluate global model")
                     # acc, train_loss = self.evaluate()
-                    acc, train_loss = self.evaluate_trust()
+                    acc, train_loss, test_auc, test_f1, test_auc_pr = self.evaluate_trust()
 
                     mlflow.log_metric("global accuracy", acc, step = i)
                     mlflow.log_metric("train_loss", train_loss, step = i)
@@ -236,6 +154,8 @@ class FedAvg(Server):
 
                 self.Budget.append(time.time() - s_t)
                 print('-'*25, 'time cost', '-'*25, self.Budget[-1])
+
+                self.time_cost_list.append(self.Budget[-1])
 
                 if self.auto_break and self.check_done(acc_lss=[self.rs_test_acc], top_cnt=self.top_cnt):
                     break

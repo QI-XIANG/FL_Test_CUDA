@@ -60,6 +60,6 @@ class UCB:
         for client, reward in zip(clients, rewards):
             self.sums_of_reward[client] = self.sums_of_reward[client] * reward_decay + reward
             self.numbers_of_selections[client] += 1
-        print("sums of reward: ", self.sums_of_reward)
+        #print("sums of reward: ", self.sums_of_reward)
         print("number of selection: ", self.numbers_of_selections)
         

@@ -82,7 +82,7 @@ def run(args):
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
             elif "fmnist600" in args.dataset:
                 args.model = FedAvgCNN(in_features=1, num_classes=args.num_classes, dim=1024).to(args.device)
-            elif "Cifar10_20" in args.dataset:
+            elif "Cifar10_100_alpha01" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Cifar100_100_alpha01" in args.dataset:
                 #args.model = FedProtoCifar100().to(args.device)
@@ -108,8 +108,8 @@ def run(args):
             elif "Cifar100_300_alpha01" in args.dataset:
                 args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "CINIC10_100_alpha01" in args.dataset:
-                #args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
-                args.model = FedAvgCNN_V2(in_features=3, num_classes=args.num_classes).to(args.device)
+                args.model = FedAvgCNN(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
+                #args.model = FedAvgCNN_V2(in_features=3, num_classes=args.num_classes).to(args.device)
                 #args.model = FedProtoCINIC10().to(args.device)
                 #args.model = FedProtoCINIC10_V2(num_classes=args.num_classes, architecture='mobilenetv2')
                 #args.model = args.model.to(args.device)
@@ -130,7 +130,7 @@ def run(args):
                 args.model = CelebAMultiLabelCNN().to(args.device)
             elif "GTSRB20" in args.dataset:
                 args.model = FedAvgCNN3(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
-            elif "SVHN20" in args.dataset:
+            elif "SVHN100_alpha01" in args.dataset:
                 args.model = FedAvgCNN3(in_features=3, num_classes=args.num_classes, dim=1600).to(args.device)
             elif "Shakespeare_20" in args.dataset:
                 args.model = LSTMNetNew(vocab_size=6714, hidden_dim=256).to(args.device)

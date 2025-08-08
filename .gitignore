@@ -56,3 +56,6 @@ FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server/rawdata/cifar-100-python.ta
 FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server/rawdata/cifar-100-python/train
 FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/rawdata/cifar-100-python.tar.gz
 FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/rawdata/cifar-100-python/train
+FL_Test_Env_CUDA/result_archive.zip
+FL_Test_Env_CUDA/dataset/Cifar10_100_alpha01/rawdata/cifar-10-python.tar.gz
+FL_Test_Env_CUDA/dataset/SVHN100_alpha01/rawdata/train_32x32.mat

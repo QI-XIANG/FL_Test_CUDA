@@ -21,11 +21,11 @@ from sklearn.ensemble import IsolationForest
 import math
 import os
 import copy
-from flcore.trainmodel.models import FedAvgCNN_V2, FedAvgCNN
+from flcore.trainmodel.models import FedAvgCNN_V2, FedAvgCNN, FedAvgCNN3
 from scipy.stats import rankdata
 import scipy.special
 
-class EnhancedRSVDUCBThompson:
+class EnhancedRSVDUCBThompson():
     def __init__(self, num_clients, num_join_clients, min_valid_clients=10, c=1, prior_alpha=1, prior_beta=1):
         self.num_clients = num_clients
         self.num_join_clients = num_join_clients
@@ -68,7 +68,7 @@ class EnhancedRSVDUCBThompson:
         self.baseline_aggregation_weight = 0.0
 
         # Server model and baseline
-        self.server_model = FedAvgCNN_V2(in_features=3, num_classes=10).to("cuda")
+        self.server_model = FedAvgCNN3(in_features=3, num_classes=10, dim=1600).to("cuda")
         self.optimizer = torch.optim.SGD(self.server_model.parameters(), lr=0.005)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=0.99)
         self.loss_fn = torch.nn.CrossEntropyLoss()
@@ -88,30 +88,29 @@ class EnhancedRSVDUCBThompson:
             print("[INFO] No previous server model found.")
     
     def load_server_data_new(self):
-        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/CINIC10_100_alpha01_server2/server_data.npz"
+        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/SVHN100_alpha01/server_data.npz"
         train_data = np.load(server_data_path, allow_pickle=True)['data'].tolist()
         X_train = torch.Tensor(train_data['x']).type(torch.float32)
         y_train = torch.Tensor(train_data['y']).type(torch.int64)
         self.server_data = [(x, y) for x, y in zip(X_train, y_train)]
         train_loader = DataLoader(self.server_data, batch_size=10, drop_last=True, shuffle=True)
         return train_loader
-
-    def load_server_data_skewed(self, alpha=0.1, n_server_samples=1000, retained_classes=5, batch_size=10):
+    
+    def load_server_data_skewed(self, alpha=0.1, n_server_samples=400, batch_size=10):
         if self.server_data_loader is not None:
             return self.server_data_loader
 
-        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/CINIC10_100_alpha01_server2/server_data.npz"
+        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/SVHN100_alpha01/server_data.npz"
         train_data = np.load(server_data_path, allow_pickle=True)['data'].tolist()
         X_all = torch.Tensor(train_data['x']).type(torch.float32)
         y_all = torch.Tensor(train_data['y']).type(torch.int64)
 
         full_class_set = np.unique(y_all.numpy())
-        selected_classes = np.random.choice(full_class_set, size=retained_classes, replace=False)
-        selected_classes = sorted(selected_classes.tolist())
+        num_classes = len(full_class_set)
 
-        class_indices = [torch.where(y_all == c)[0] for c in selected_classes]
+        class_indices = [torch.where(y_all == c)[0] for c in full_class_set]
 
-        proportions = np.random.dirichlet([alpha] * retained_classes)
+        proportions = np.random.dirichlet([alpha] * num_classes)
         proportions = (proportions / proportions.sum()) * n_server_samples
         proportions = proportions.astype(int)
 
@@ -216,7 +215,27 @@ class EnhancedRSVDUCBThompson:
         rank_matrix = np.array([rankdata(g) for g in grads_np])
         rank_std = np.std(rank_matrix, axis=1)
 
-        combined_scores = 0.4 * recon_error + 0.3 * iso_scores + 0.3 * rank_std
+        # 將多種指標正規化 (Normalize various metrics for combination)
+        def normalize(x):
+            arr = np.array(x, dtype=float)
+            return (arr - np.min(arr)) / (np.max(arr) - np.min(arr) + 1e-8)
+        
+        recon_error_norm = normalize(recon_error)
+        iso_scores_norm = normalize(iso_scores)
+        rank_std_norm = normalize(rank_std)
+
+        # 動態計算每種指標的權重 (Dynamically compute weights for each metric via variance)
+        variances = np.array([
+            np.var(recon_error_norm),
+            np.var(iso_scores_norm),
+            np.var(rank_std_norm)
+        ])
+        weights = scipy.special.softmax(variances * 10)
+        min_w = 0.1 / len(weights)
+        weights = np.clip(weights, min_w, None)
+        weights /= np.sum(weights)
+
+        combined_scores = weights[0] * recon_error + weights[1] * iso_scores + weights[2] * rank_std
 
         for i, cid in enumerate(gradients.keys()):
             self.anomaly_score_history[cid] = self.decay_factor * self.anomaly_score_history[cid] + (1 - self.decay_factor) * combined_scores[i]
@@ -461,6 +480,7 @@ class EnhancedRSVDUCBThompson:
     def fine_tune_global_model(self, global_model, epochs=3, device="cuda"):
         loader = self.load_server_data_new()
         global_model.to(device)
+        global_model.train()
         opt = torch.optim.SGD(global_model.parameters(), lr=0.005)
         ce = torch.nn.CrossEntropyLoss()
         for _ in range(epochs):
@@ -471,5 +491,5 @@ class EnhancedRSVDUCBThompson:
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
-        global_model.to("cuda")
+        global_model.eval()
         print(f"[INFO] Finished fine-tuning global model")

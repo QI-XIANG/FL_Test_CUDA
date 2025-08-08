@@ -257,7 +257,7 @@ class FedRSVDUCBTE(Server):
                     # === Step 4: Provide updated reward list to selection algorithm ===
                     if counter_for_RSVD > 1:
                         rewards = select_agent.compute_composite_rewards(clients_acc, clients_f1, clients_auc_pr, clients_avg_loss, selected_ids)
-                        select_agent.update(selected_ids, rewards, clients_global_test_acc, self.global_model)
+                        select_agent.update(selected_ids, rewards, clients_global_test_acc, self.model)
                     '''rewards = clients_composite_reward
                     select_agent.update(selected_ids, rewards)'''
                 
