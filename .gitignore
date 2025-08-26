@@ -59,4 +59,5 @@ FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/rawdata/cifar-100-python/
 FL_Test_Env_CUDA/result_archive.zip
 FL_Test_Env_CUDA/dataset/Cifar10_100_alpha01/rawdata/cifar-10-python.tar.gz
 FL_Test_Env_CUDA/dataset/SVHN100_alpha01/rawdata/train_32x32.mat
-FL_Test_Env_CUDA/code/results/
+FL_Test_Env_CUDA/code/results/FL_Test_Env_CUDA/dataset/GTSRB100_alpha01/rawdata/GTSRB_Final_Training_Images.zip
+FL_Test_Env_CUDA/.git/objects/pack/pack-6714ddae6f32c4956f1697e92ce02e3932f898bd.pack

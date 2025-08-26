@@ -110,7 +110,11 @@ class FedThompson(Server):
                 '''
                 select client by trust
                 '''
-
+            
+                poisoned_selected = [idx for idx in selected_clients if self.clients[idx].poisoned]
+                # 紀錄有毒的客戶端數量
+                self.poisoned_clients_selected.append(len(poisoned_selected))
+                
                 print(f"\n-------------Round number: {i}-------------")
 
                 print(f"history acc: {self.acc_his}")

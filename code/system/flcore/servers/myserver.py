@@ -81,7 +81,9 @@ class FedUCBN(Server):
                 selected_ids = select_agent.select_clients(i)
                 print("selected clients:", selected_ids)
                 self.selected_clients = [self.clients[c] for c in selected_ids]
-
+                # 紀錄有毒的客戶端數量
+                poisoned_selected = [idx for idx in selected_ids if self.clients[idx].poisoned]
+                self.poisoned_clients_selected.append(len(poisoned_selected))
                 # => mh code 
                 
 

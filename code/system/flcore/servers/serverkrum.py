@@ -122,6 +122,9 @@ class FedKrum(Server):
                 # Identify poisoned clients among Bulyan-selected clients
                 poisoned_selected = [idx for idx in selected_ids if self.clients[idx].poisoned]
                 print(f"Poisoned clients in selected clients: {poisoned_selected}")
+
+                # 紀錄有毒的客戶端數量
+                self.poisoned_clients_selected.append(len(poisoned_selected))
                 # <= mh code
                 # self.selected_clients = self.select_clients()
                 # s = [c.id for c in self.selected_clients]

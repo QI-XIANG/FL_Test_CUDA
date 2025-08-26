@@ -68,7 +68,7 @@ class EnhancedRSVDUCBThompson():
         self.baseline_aggregation_weight = 0.0
 
         # Server model and baseline
-        self.server_model = FedAvgCNN3(in_features=3, num_classes=10, dim=1600).to("cuda")
+        self.server_model = FedAvgCNN_V2(in_features=3, num_classes=100).to("cuda")
         self.optimizer = torch.optim.SGD(self.server_model.parameters(), lr=0.005)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer, gamma=0.99)
         self.loss_fn = torch.nn.CrossEntropyLoss()
@@ -88,7 +88,7 @@ class EnhancedRSVDUCBThompson():
             print("[INFO] No previous server model found.")
     
     def load_server_data_new(self):
-        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/SVHN100_alpha01/server_data.npz"
+        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
         train_data = np.load(server_data_path, allow_pickle=True)['data'].tolist()
         X_train = torch.Tensor(train_data['x']).type(torch.float32)
         y_train = torch.Tensor(train_data['y']).type(torch.int64)
@@ -100,7 +100,7 @@ class EnhancedRSVDUCBThompson():
         if self.server_data_loader is not None:
             return self.server_data_loader
 
-        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/SVHN100_alpha01/server_data.npz"
+        server_data_path = "/home/dslab/qixiang/FL_Test_Env_CUDA/dataset/Cifar100_100_alpha01_server_2/server_data.npz"
         train_data = np.load(server_data_path, allow_pickle=True)['data'].tolist()
         X_all = torch.Tensor(train_data['x']).type(torch.float32)
         y_all = torch.Tensor(train_data['y']).type(torch.int64)

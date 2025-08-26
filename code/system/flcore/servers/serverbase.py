@@ -97,6 +97,9 @@ class Server(object):
         self.Budget = []  # 預算記錄
         self.weight_option = args.weight_option  # 權重選項
 
+        # 紀錄選中的poisoned client
+        self.poisoned_clients_selected = []
+
         self.testdataloader = self.get_test_data()
 
         # 判斷是否為多標籤資料集
@@ -597,6 +600,7 @@ class Server(object):
         f1_df = pd.DataFrame(self.f1_data)
         auc_pr_df = pd.DataFrame(self.auc_pr_data)
         time_df = pd.DataFrame(self.time_cost_list)
+        poisoned_df = pd.DataFrame(self.poisoned_clients_selected)
 
         name = f"{self.algorithm}_{self.select_clients_algorithm}_{self.poisoned_ratio*self.num_clients}_{self.random_seed}"
         acc_df.columns = [name]
@@ -605,6 +609,7 @@ class Server(object):
         f1_df.columns = [name]
         auc_pr_df.columns = [name]
         time_df.columns = [name]
+        poisoned_df.columns = [name]
 
         auc_dir = f"../results/{self.num_clients}_{self.expID}/auc"
         f1_dir = f"../results/{self.num_clients}_{self.expID}/f1"
@@ -619,12 +624,15 @@ class Server(object):
         auc_pr_df.to_csv(os.path.join(auc_pr_dir, f"{name}.csv"), index=False)
         time_df.to_csv(os.path.join(time_cost_dir, f"{name}.csv"), index=False)
 
+        poisoned_dir = f"../results/{self.num_clients}_{self.expID}/poisoned"
         acc_dir = f"../results/{self.num_clients}_{self.expID}/accuracy"
         loss_dir = f"../results/{self.num_clients}_{self.expID}/loss"
         os.makedirs(acc_dir, exist_ok=True)
         os.makedirs(loss_dir, exist_ok=True)
+        os.makedirs(poisoned_dir, exist_ok=True)
         acc_df.to_csv(os.path.join(acc_dir, f"{name}.csv"), index=False)
         loss_df.to_csv(os.path.join(loss_dir, f"{name}.csv"), index=False)
+        poisoned_df.to_csv(os.path.join(poisoned_dir, f"{name}.csv"), index=False)
 
         # 繪製並儲存時間圖表
         plt.figure()
@@ -690,6 +698,17 @@ class Server(object):
         plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
         plt.legend()
         plt.savefig(os.path.join(loss_dir, f"{name}_loss.png"))
+        plt.close()
+
+        # 繪製並儲存毒化率圖表
+        plt.figure()
+        plt.plot(poisoned_df, label='Poisoned Clients Selected', color='blue')
+        plt.title('Poisoned Clients Selected Over Time')
+        plt.xlabel('Epochs')
+        plt.ylabel('Number of Poisoned Clients Selected')
+        plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+        plt.legend()
+        plt.savefig(os.path.join(poisoned_dir, f"{name}_poisoned_clients.png"))
         plt.close()
 
     def save_item(self, item, item_name):

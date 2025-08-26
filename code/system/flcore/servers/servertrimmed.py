@@ -114,6 +114,10 @@ class FedTrimmed(Server):
                 print("selected clients:", selected_ids)
                 self.selected_clients = [self.clients[c] for c in selected_ids]
 
+                poisoned_selected = [idx for idx in selected_ids if self.clients[idx].poisoned]
+                # 紀錄有毒的客戶端數量
+                self.poisoned_clients_selected.append(len(poisoned_selected))
+
                 # self.selected_clients = self.select_clients()
                 # s = [c.id for c in self.selected_clients]
                 # print(s)
